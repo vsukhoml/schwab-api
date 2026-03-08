@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "schwab-api"
+version = "0.1.0"
+description = "A lightweight and reliable Python client for the Charles Schwab Trading API"
+readme = "README.md"
+authors = [
+    { name = "vsukhoml" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "cryptography>=41.0.0",
+    "pytz",
+    "requests",
+    "websockets"
+]
+
+[project.optional-dependencies]
+curl_cffi = ["curl_cffi"]
+pandas = ["pandas"]
+all = ["curl_cffi", "pandas"]
+
+[tool.setuptools.packages.find]
+include = ["schwab_api", "schwab_api.*"]

@@ -205,3 +205,18 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+.gemini
+GEMINI.md
+
+
+# Temporary script files
+migrate_tokens.py
+update_utils.py
+schwab.py
+
+# End-to-end API test dumps
+e2e_dumps/
+
+# Local virtual environments
+.venv_compare/
+
