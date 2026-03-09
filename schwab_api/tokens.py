@@ -30,6 +30,12 @@ logger = logging.getLogger(__name__)
 
 
 class FileLock:
+    """
+    A simple cross-platform file locking mechanism.
+    Uses fcntl.flock on Unix and msvcrt.locking on Windows to ensure that
+    multiple processes can safely share and update the same tokens file.
+    """
+
     def __init__(self, file_path: str):
         self.lock_file = file_path + ".lock"
         self.fd = None
@@ -308,6 +314,9 @@ class Tokens:
             now - self._access_token_issued
         )
 
+        # We refresh the refresh token before it exactly expires (at 7 days).
+        # Refreshing at ~6.5 days prevents expiration quirks where Schwab might
+        # invalidate the token just before the technical deadline.
         refresh_threshold = datetime.timedelta(seconds=3630)  # 60.5 mins
         access_threshold = datetime.timedelta(seconds=61)  # 61 seconds
 

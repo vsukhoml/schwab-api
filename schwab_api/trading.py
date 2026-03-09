@@ -9,6 +9,11 @@ class OptionChainAnalyzer:
     """
     A utility class for analyzing option chains returned by the Schwab API.
     Requires pandas to be installed (`pip install schwab_api[pandas]`).
+
+    Example:
+        >>> chain_json = client.option_chains("AAPL").json()
+        >>> analyzer = OptionChainAnalyzer(chain_json)
+        >>> df = analyzer.get_put_candidates(min_dte=30, max_dte=45, max_delta=0.30)
     """
 
     def __init__(
@@ -249,6 +254,11 @@ class OptionChainAnalyzer:
 class PositionAnalyzer:
     """
     Analyzes an account's positions to calculate Greeks, PnL, and theta decay targets.
+
+    Example:
+        >>> positions = client.account_details(account_hash, fields="positions").json()
+        >>> analyzer = PositionAnalyzer(positions.get('securitiesAccount', {}).get('positions', []))
+        >>> winners = analyzer.get_winning_options(min_profit_percentage=50.0)
     """
 
     def __init__(self, account_positions_json: List[Dict[str, Any]]):

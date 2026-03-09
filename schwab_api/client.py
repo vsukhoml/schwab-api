@@ -5,16 +5,25 @@ import urllib.parse
 from functools import wraps
 from typing import Any, Dict, List, Optional, Union
 
-from .exceptions import (AuthError, InvalidRequestError, RateLimitError,
-                         ResourceNotFoundError, SchwabAPIError, ServerError)
+from .exceptions import (
+    AuthError,
+    InvalidRequestError,
+    RateLimitError,
+    ResourceNotFoundError,
+    SchwabAPIError,
+    ServerError,
+)
 from .tokens import DEFAULT_CONFIG_PATH, Tokens
 from .utils import TimeFormat, format_list, parse_params, time_convert
 
 try:
+    # Financial APIs often deploy aggressive Cloudflare/WAF bot-protection.
+    # curl_cffi mimics real browser TLS/JA3 fingerprints to bypass these protections.
     from curl_cffi import requests as c_requests  # type: ignore[no-redef]
 
     HAS_CURL_CFFI = True
 except ImportError:
+    # Fallback to standard requests if curl_cffi is not installed.
     import requests as c_requests  # type: ignore[no-redef]
 
     HAS_CURL_CFFI = False
@@ -149,7 +158,15 @@ class Client:
     def linked_accounts(self) -> Any:
         """
         Get list of account numbers and their encrypted hashes (hashValue).
-        The hashValue must be used for all subsequent account-specific API calls.
+
+        **Nuance:** Almost all Schwab endpoints require this encrypted 'hashValue'
+        rather than the raw account number. You must call this first to map them.
+
+        Example:
+            >>> client = Client(...)
+            >>> accounts = client.linked_accounts().json()
+            >>> first_account_hash = accounts[0]['hashValue']
+            >>> print(f"Hash for account {accounts[0]['accountNumber']}: {first_account_hash}")
         """
         return self._request("GET", "/trader/v1/accounts/accountNumbers")
 
@@ -179,6 +196,10 @@ class Client:
 
         :param account_hash: The encrypted ID of the account (hashValue from linked_accounts).
         :param fields: Optional. Set to 'positions' to include position data in the response.
+
+        Example:
+            >>> details = client.account_details(account_hash, fields="positions").json()
+            >>> positions = details['securitiesAccount']['positions']
         """
         return self._request(
             "GET",
@@ -262,6 +283,12 @@ class Client:
         :param order: The order object. See documentation for the required schema.
         :return: Response with 201 Created status. The order ID can be extracted from
                  the 'Location' header.
+
+        Example:
+            >>> from schwab_api.orders.equities import equity_buy_market
+            >>> order = equity_buy_market("AAPL", 10).build()
+            >>> resp = client.place_order(account_hash, order)
+            >>> order_id = resp.headers.get("Location").split("/")[-1]
         """
         return self._request(
             "POST",
@@ -391,6 +418,10 @@ class Client:
         :param fields: Optional. Subset of data to return (quote, fundamental, extended, reference, regular).
                        By default, returns all fields.
         :param indicative: Optional. Include indicative quotes for ETF symbols ($ABC.IV).
+
+        Example:
+            >>> quote = client.quotes("AAPL").json()
+            >>> last_price = quote["AAPL"]["quote"]["lastPrice"]
         """
         return self._request(
             "GET",
@@ -460,6 +491,10 @@ class Client:
         :param expMonth: JAN, FEB, MAR, APR, MAY, JUN, JUL, AUG, SEP, OCT, NOV, DEC, or ALL.
         :param optionType: S (Standard), NS (Non-Standard), or ALL.
         :param entitlement: PP (PayingPro), NP (NonPro), or PN (NonPayingPro).
+
+        Example:
+            >>> chain = client.option_chains("AAPL", contractType="CALL", strikeCount=5).json()
+            >>> call_expirations = chain.get('callExpDateMap', {})
         """
         return self._request(
             "GET",
@@ -527,6 +562,10 @@ class Client:
         :param endDate: End date as milliseconds since the UNIX epoch.
         :param needExtendedHoursData: If true, returns extended hours data.
         :param needPreviousClose: If true, includes previous close price/date in response.
+
+        Example:
+            >>> history = client.price_history("AAPL", periodType="day", period=5, frequencyType="minute", frequency=15).json()
+            >>> candles = history.get('candles', [])
         """
         return self._request(
             "GET",

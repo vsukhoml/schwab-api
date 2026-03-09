@@ -29,6 +29,8 @@ def time_convert(dt, fmt: TimeFormat = TimeFormat.ISO_8601) -> str | int | None:
         )
 
     if fmt == TimeFormat.ISO_8601:
+        # Schwab expects exactly 3 decimals for milliseconds, e.g. "2023-01-01T00:00:00.000Z".
+        # Python's .strftime('%f') provides 6 decimals, so we truncate the last 3.
         return f"{dt.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]}Z"
     elif fmt == TimeFormat.EPOCH:
         return int(dt.timestamp())
@@ -41,13 +43,24 @@ def time_convert(dt, fmt: TimeFormat = TimeFormat.ISO_8601) -> str | int | None:
 
 
 def to_schwab(t: str) -> str:
-    """Convert Yahoo Finance ticker format to Schwab ticker format."""
+    """
+    Convert Yahoo Finance ticker format to Schwab ticker format.
+
+    Examples:
+    - 'BRK-B' -> 'BRK/B'
+    - 'AAPL' -> 'AAPL'
+    - '^DJI' -> '$DJI'
+    - 'O-PB' -> 'O/PRB' (Preferred)
+    """
     if not t:
         return t
     if t[0] == "^":
         return "$" + t[1:]
     if len(t) < 3:
         return t
+
+    # Preferred shares and other special share classes often use '-' or '.'
+    # in Yahoo Finance, but Schwab expects '/' and specific codes like 'PR'.
     match (t[-3], t[-2], t[-1]):
         case (_, ".", "P") | (_, "-", "P"):
             return t[:-2] + "/PR"

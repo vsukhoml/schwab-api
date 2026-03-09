@@ -170,8 +170,7 @@ class ComplexOrderStrategyType(Enum):
     CALENDAR = "CALENDAR"
 
     #: Strategy using different strikes AND different expiration months.
-    #: `More info <https://tickertape.tdameritrade.com/trading/
-    #: love-your-diagonal-spread-15030>`__
+    #: `More info <https://www.optionseducation.org/strategies/all-strategies/diagonal-call-spread>`__
     DIAGONAL = "DIAGONAL"
 
     #: Strategy consisting of buying/selling both a call and a put with the same strike and expiration.
@@ -198,8 +197,7 @@ class ComplexOrderStrategyType(Enum):
     IRON_CONDOR = "IRON_CONDOR"
 
     #: Moving an existing vertical spread to a different expiration or strike.
-    #: `More info <https://tickertape.tdameritrade.com/trading/
-    #: exit-winning-losing-trades-16685>`__
+    #: `More info <https://www.schwab.com/learn/story/three-options-trading-adjustment-strategies>`__
     VERTICAL_ROLL = "VERTICAL_ROLL"
 
     #: Hedging a long stock position by buying an OTM put and selling an OTM call.

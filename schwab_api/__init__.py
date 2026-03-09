@@ -1,10 +1,19 @@
 from . import orders, utils
 from .client import Client
-from .exceptions import (AuthError, InvalidRequestError, RateLimitError,
-                         ResourceNotFoundError, SchwabAPIError, ServerError)
+from .exceptions import (
+    AuthError,
+    InvalidRequestError,
+    RateLimitError,
+    ResourceNotFoundError,
+    SchwabAPIError,
+    ServerError,
+)
 from .stream import StreamClient, StreamClientAsync
-from .stream_parsers import (StreamResponseHandler, get_numeric_fields,
-                             parse_numeric_fields)
+from .stream_parsers import (
+    StreamResponseHandler,
+    get_numeric_fields,
+    parse_numeric_fields,
+)
 from .trading import OptionChainAnalyzer, PositionAnalyzer
 
 __version__ = "0.1.0"

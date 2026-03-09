@@ -50,8 +50,8 @@ class OrderBuilder:
     """
     Helper class to create arbitrarily complex orders. Note this class simply
     implements the order schema defined in the `documentation
-    <https://developer.schwabmeritrade.com/account-access/apis/post/accounts/
-    %7BaccountId%7D/orders-0>`__, with no attempts to validate the result.
+    <https://developer.schwab.com/products/trader-api--individual/details/specifications/Retail%20Trader%20API%20Production>`__,
+    with no attempts to validate the result.
     Orders created using this class may be rejected or may never fill. Use at
     your own risk.
     """
@@ -152,8 +152,7 @@ class OrderBuilder:
     # Quantity
     def set_quantity(self, quantity: float):
         """
-        Exact semantics unknown. See :ref:`undocumented_quantity` for a
-        discussion.
+        Set the order-level quantity.
         """
         if quantity <= 0:
             raise ValueError("quantity must be positive")
@@ -190,7 +189,7 @@ class OrderBuilder:
     def set_stop_price(self, stop_price: Union[float, str]):
         """
         Set the stop price. Note price can be passed as either a `float` or an
-        `str`. See :ref:`number_truncation`.
+        `str`.
         """
         if isinstance(stop_price, str):
             self._stopPrice = stop_price
@@ -201,7 +200,7 @@ class OrderBuilder:
     def copy_stop_price(self, stop_price: Union[float, str]):
         """
         Directly set the stop price, avoiding all the validation and truncation
-        logic from :func:`set_stop_price`.
+        logic from `set_stop_price`.
         """
         self._stopPrice = stop_price
         return self
@@ -316,7 +315,7 @@ class OrderBuilder:
     def set_price(self, price: Union[float, str]):
         """
         Set the order price. Note price can be passed as either a `float` or an
-        `str`. See :ref:`number_truncation`.
+        `str`.
         """
         if isinstance(price, str):
             self._price = price
@@ -327,7 +326,7 @@ class OrderBuilder:
     def copy_price(self, price: Union[float, str]):
         """
         Directly set the stop price, avoiding all the validation and truncation
-        logic from :func:`set_price`.
+        logic from `set_price`.
         """
         self._price = price
         return self
@@ -398,9 +397,7 @@ class OrderBuilder:
     ):
         if isinstance(child_order_strategy, requests.Response):
             raise ValueError(
-                "Child order cannot be a response. See here for "
-                + "details: https://schwab-api.readthedocs.io/en/latest/"
-                + "order-templates.html#utility-methods"
+                "Child order cannot be a response. See documentation for details."
             )
 
         if not isinstance(child_order_strategy, OrderBuilder) and not isinstance(

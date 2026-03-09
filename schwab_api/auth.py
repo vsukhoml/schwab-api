@@ -96,10 +96,14 @@ def automated_auth_flow(
         cert_path = None
         if parsed_url.scheme == "https":
             try:
+                # Schwab requires HTTPS for callback URLs. We generate a persistent ad-hoc
+                # ECDSA P-256 certificate to fulfill this requirement for localhost.
                 cert_dir = os.path.join(os.path.expanduser(config_path), "certs")
                 os.makedirs(cert_dir, exist_ok=True)
                 cert_path = os.path.join(cert_dir, "cert.pem")
                 key_path = os.path.join(cert_dir, "key.pem")
+
+                # Only generate if it doesn't exist to allow users to permanently trust it in browser
                 if not os.path.exists(cert_path) or not os.path.exists(key_path):
                     subprocess.run(
                         [
@@ -137,6 +141,8 @@ def automated_auth_flow(
                 server.server_close()
                 return manual_auth_flow(auth_url, callback_url, logger=_logger)
 
+        # Run the server in a daemon thread to avoid blocking the main execution.
+        # This allows us to open the browser and wait for the callback concurrently.
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
 
@@ -153,7 +159,8 @@ def automated_auth_flow(
             _logger.warning(f"Could not open browser automatically: {e}")
 
         try:
-            # Wait for the callback with timeout
+            # We use a Queue to safely pass the redirect path from the server thread
+            # (which runs in _OAuthCallbackHandler.do_GET) back to the main thread.
             callback_path = oauth_queue.get(timeout=timeout)
 
             # Construct the full callback URL

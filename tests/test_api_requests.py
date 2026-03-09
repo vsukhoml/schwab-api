@@ -2,8 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from schwab_api.client import Client
-from schwab_api.exceptions import (AuthError, InvalidRequestError,
-                                   RateLimitError)
+from schwab_api.exceptions import AuthError, InvalidRequestError, RateLimitError
 
 
 class TestClientAPIRequests(unittest.TestCase):

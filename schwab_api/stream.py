@@ -128,7 +128,9 @@ class StreamBase:
                     await call_receiver(await ws.recv(), **kwargs)
                     self.active = True
 
-                    # send subscriptions
+                    # State Recovery: If the connection was lost and restored, we replay
+                    # all previous subscriptions from the self.subscriptions dictionary
+                    # to ensure the stream resumes exactly where it left off.
                     for service, subs in self.subscriptions.items():
                         grouped: dict[str, list[str]] = {}
                         for key, fields in subs.items():
@@ -263,9 +265,9 @@ class StreamBase:
         """
         Subscribe to Level One Equities data.
 
-        The streaming response will contain a 'data' array with service 'LEVELONE_EQUITIES'.
-        Inside 'content', each item will have a 'key' (the symbol) and numeric fields.
-        Example numeric fields for Equities (based on typical Schwab mapping):
+        **Nuance:** The Schwab Streamer uses numeric string keys (e.g., "1") in
+        responses. These mappings are typically hardcoded in the API spec.
+        Example numeric fields for Equities:
         - "1": Bid Price
         - "2": Ask Price
         - "3": Last Price
