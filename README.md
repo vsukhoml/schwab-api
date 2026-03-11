@@ -102,7 +102,8 @@ response = client.place_order(account_hash, order)
 
 ### 4. Streaming Real-Time Data (WebSockets)
 
-Stream data using the synchronous wrapper (runs in a background daemon thread).
+Stream data using the synchronous wrapper (runs in a background daemon thread). 
+You can use human-readable field names (e.g. `"symbol, bid_price, ask_price"`) instead of remembering Schwab's numeric IDs (e.g. `"0,1,2"`).
 
 ```python
 from schwab_api import StreamClient
@@ -116,8 +117,11 @@ stream = StreamClient(client)
 # Start the stream in a background thread
 stream.start(receiver=on_message)
 
-# Subscribe to level 1 equities
-req = stream.level_one_equities(keys=["AAPL", "GOOG"], fields="0,1,2,3")
+# Subscribe to level 1 equities using human readable fields
+req = stream.level_one_equities(
+    keys=["AAPL", "GOOG"], 
+    fields=["symbol", "bid_price", "ask_price", "last_price"]
+)
 stream.send(req)
 
 # Wait and listen
@@ -127,31 +131,56 @@ time.sleep(10)
 stream.stop()
 ```
 
-For asynchronous applications (FastAPI, discord bots, etc.), use `StreamClientAsync` inside your event loop.
+For modular applications, you can use the `StreamResponseHandler` to act as a dispatcher and chain multiple event handlers to the same stream:
 
 ```python
-import asyncio
-from schwab_api import StreamClientAsync
+from schwab_api import StreamResponseHandler
 
-async def main():
-    stream = StreamClientAsync(client)
-    
-    async def on_message(msg):
-        print(msg)
+class MyEquityHandler(StreamResponseHandler):
+    def on_level_one_equity(self, update):
+        print(f"Equity Update: {update['symbol']} is at {update.get('last_price')}")
 
-    # Starts stream in the current asyncio event loop
-    await stream.start(receiver=on_message)
-    
-    req = stream.level_one_equities(keys=["AAPL"], fields="0,1,2,3")
-    await stream.send(req)
-    
-    await asyncio.sleep(10)
-    await stream.stop()
+root_handler = StreamResponseHandler()
+root_handler.add_handler(MyEquityHandler())
 
-asyncio.run(main())
+stream.start(receiver=root_handler.handle)
 ```
 
-### 5. Auto-Trading Utilities
+### 5. Account Manager (Auto-Updating Portfolio)
+
+The `AccountManager` is a powerful utility that abstracts away the need to manually join `linked_accounts` hashes with `account_details`. 
+
+If you pass a `StreamClient` to it, it will **automatically subscribe** to the Level 1 streaming quotes for all of your open positions, and **automatically recalculate** your real-time PnL in the background! Furthermore, it automatically listens to the `Account Activity` stream to detect new order fills and auto-refresh your quantities.
+
+```python
+from schwab_api import Client, StreamClient, AccountManager, StreamResponseHandler
+import time
+
+client = Client(app_key="...", app_secret="...")
+stream_client = StreamClient(client)
+
+# Initialize the manager and attach it to a stream handler
+manager = AccountManager(client, stream_client)
+root_handler = StreamResponseHandler()
+root_handler.add_handler(manager)
+
+# 1. Pull initial balances and positions via REST API
+manager.update()
+
+# 2. Start the stream. The manager will automatically subscribe to all 
+#    tickers in your portfolio and update prices in the background!
+stream_client.start(receiver=root_handler.handle)
+
+time.sleep(5) # Let stream gather some quotes
+
+# 3. Retrieve your automatically updated aggregate totals across all linked accounts
+aapl_stats = manager.get_position_totals("AAPL")
+print(f"Total AAPL Exposure: ${aapl_stats['marketValue']:.2f}")
+
+stream_client.stop()
+```
+
+### 6. Auto-Trading Utilities
 
 The library includes built-in analyzers for parsing positions and option chains, making it easy to build automated trading algorithms (like the Options Wheel Strategy). Requires `pandas` (`pip install "schwab-api[pandas] @ git+https://github.com/vsukhoml/schwab-api.git"`).
 

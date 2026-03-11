@@ -411,14 +411,41 @@ class StreamResponseHandler:
     """
     A base class for handling parsed stream events.
     Subclass this and override the specific `on_*` methods you need.
+    It can also act as a dispatcher to multiple sub-handlers via chaining.
     """
 
     def __init__(self, logger: Optional[logging.Logger] = None):
         self._logger = logger or logging.getLogger(self.__class__.__name__)
+        self._handlers: List["StreamResponseHandler"] = []
+
+    def add_handler(self, handler: "StreamResponseHandler") -> None:
+        """
+        Adds a sub-handler that will receive all parsed stream events.
+        Useful for chaining multiple independent modules that rely on the same stream.
+
+        Args:
+            handler (StreamResponseHandler): The handler instance to add to the chain.
+        """
+        if handler not in self._handlers:
+            self._handlers.append(handler)
+
+    def remove_handler(self, handler: "StreamResponseHandler") -> None:
+        """
+        Removes a previously attached sub-handler from the chain.
+
+        Args:
+            handler (StreamResponseHandler): The handler instance to remove.
+        """
+        if handler in self._handlers:
+            self._handlers.remove(handler)
 
     def handle(self, raw_message: Union[str, Dict[str, Any]]) -> None:
         """
         Main entry point. Call this from the stream client's receiver callback.
+        Parses raw API stream messages and dispatches them to appropriate typed events.
+
+        Args:
+            raw_message (Union[str, Dict[str, Any]]): The raw JSON string or dict from the stream.
         """
         try:
             if isinstance(raw_message, str):
@@ -441,39 +468,69 @@ class StreamResponseHandler:
             responses = data.get("response", [])
             for response in responses:
                 self.on_response(response)
+                for h in self._handlers:
+                    h.on_response(response)
 
         except Exception as e:
             self._logger.error(f"Error handling stream message: {e}")
 
     def _dispatch(self, service: str, update: Dict[str, Any]) -> None:
-        """Routes the parsed update to the corresponding specific handler."""
+        """
+        Routes the parsed update to the corresponding specific handler and all attached sub-handlers.
+
+        Args:
+            service (str): The Schwab streaming service type (e.g. 'LEVELONE_EQUITIES').
+            update (Dict[str, Any]): The parsed, human-readable update dictionary.
+        """
         match service:
             case "LEVELONE_EQUITIES":
                 self.on_level_one_equity(update)
+                for h in self._handlers:
+                    h.on_level_one_equity(update)
             case "LEVELONE_OPTIONS":
                 self.on_level_one_option(update)
+                for h in self._handlers:
+                    h.on_level_one_option(update)
             case "LEVELONE_FUTURES":
                 self.on_level_one_future(update)
+                for h in self._handlers:
+                    h.on_level_one_future(update)
             case "LEVELONE_FUTURES_OPTIONS":
                 self.on_level_one_future_option(update)
+                for h in self._handlers:
+                    h.on_level_one_future_option(update)
             case "LEVELONE_FOREX":
                 self.on_level_one_forex(update)
+                for h in self._handlers:
+                    h.on_level_one_forex(update)
             case "CHART_EQUITY":
                 self.on_chart_equity(update)
+                for h in self._handlers:
+                    h.on_chart_equity(update)
             case "CHART_FUTURES":
                 self.on_chart_future(update)
+                for h in self._handlers:
+                    h.on_chart_future(update)
             case "SCREENER_EQUITY" | "SCREENER_OPTION":
                 # Screeners contain a list of items under the 'items' key
                 key = str(update.get("key", ""))
                 items = update.get("items", [])
                 for item in items:
                     self.on_screener_item(service, key, item)
+                    for h in self._handlers:
+                        h.on_screener_item(service, key, item)
             case "NYSE_BOOK" | "NASDAQ_BOOK" | "OPTIONS_BOOK":
                 self.on_book_update(service, update)
+                for h in self._handlers:
+                    h.on_book_update(service, update)
             case "ACCT_ACTIVITY":
                 self.on_account_activity(update)
+                for h in self._handlers:
+                    h.on_account_activity(update)
             case _:
                 self.on_unknown_event(service, update)
+                for h in self._handlers:
+                    h.on_unknown_event(service, update)
 
     # --- Methods to override in subclasses ---
 

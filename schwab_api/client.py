@@ -5,14 +5,8 @@ import urllib.parse
 from functools import wraps
 from typing import Any, Dict, List, Optional, Union
 
-from .exceptions import (
-    AuthError,
-    InvalidRequestError,
-    RateLimitError,
-    ResourceNotFoundError,
-    SchwabAPIError,
-    ServerError,
-)
+from .exceptions import (AuthError, InvalidRequestError, RateLimitError,
+                         ResourceNotFoundError, SchwabAPIError, ServerError)
 from .tokens import DEFAULT_CONFIG_PATH, Tokens
 from .utils import TimeFormat, format_list, parse_params, time_convert
 

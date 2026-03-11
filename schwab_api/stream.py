@@ -7,6 +7,7 @@ import time
 import zoneinfo
 from typing import Any, Callable, Dict, List, Optional, Union, cast
 
+from .stream_parsers import get_numeric_fields
 from .utils import format_list
 from .ws_clients import get_ws_client
 
@@ -284,7 +285,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("LEVELONE_EQUITIES", fields),
             },
         )
 
@@ -316,7 +317,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("LEVELONE_OPTIONS", fields),
             },
         )
 
@@ -356,7 +357,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("LEVELONE_FUTURES", fields),
             },
         )
 
@@ -382,7 +383,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("LEVELONE_FUTURES_OPTIONS", fields),
             },
         )
 
@@ -404,7 +405,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("LEVELONE_FOREX", fields),
             },
         )
 
@@ -433,7 +434,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("NYSE_BOOK", fields),
             },
         )
 
@@ -456,7 +457,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("NASDAQ_BOOK", fields),
             },
         )
 
@@ -479,7 +480,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("OPTIONS_BOOK", fields),
             },
         )
 
@@ -514,7 +515,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("CHART_EQUITY", fields),
             },
         )
 
@@ -538,7 +539,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("CHART_FUTURES", fields),
             },
         )
 
@@ -560,7 +561,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("SCREENER_EQUITY", fields),
             },
         )
 
@@ -582,14 +583,14 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("SCREENER_OPTION", fields),
             },
         )
 
     def account_activity(
         self,
         keys: Union[str, List[str]],
-        fields: Union[str, List[str]] = "0,1,2,3",
+        fields: Union[str, List[str]] = "sequence,key,account,message_type",
         command: str = "SUBS",
     ) -> Dict[str, Any]:
         """
@@ -599,7 +600,7 @@ class StreamBase:
         cancellations, and balance changes.
 
         :param keys: Streamer subscription keys (often 'Account Activity').
-        :param fields: Numeric fields to request. Default is "0,1,2,3".
+        :param fields: Numeric fields to request. Default is "0,1,2,3" (or their string names).
         :param command: Command type. Defaults to 'SUBS'.
         """
         return self.basic_request(
@@ -607,7 +608,7 @@ class StreamBase:
             command,
             parameters={
                 "keys": format_list(keys),
-                "fields": format_list(fields),
+                "fields": get_numeric_fields("ACCT_ACTIVITY", fields),
             },
         )
 
