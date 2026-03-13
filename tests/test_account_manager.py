@@ -112,6 +112,7 @@ class TestAccountManager(unittest.TestCase):
 
     def test_automatic_subscription(self):
         mock_stream = MagicMock(spec=StreamClient)
+        mock_stream._streamer_info = {"schwabClientCorrelId": "test_correl_id"}
         manager = AccountManager(self.mock_client, stream_client=mock_stream)
         manager.update()
 

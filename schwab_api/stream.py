@@ -590,7 +590,9 @@ class StreamBase:
     def account_activity(
         self,
         keys: Union[str, List[str]],
-        fields: Union[str, List[str]] = "sequence,key,account,message_type",
+        fields: Union[
+            str, List[str]
+        ] = "subscription_key,account,message_type,message_data",
         command: str = "SUBS",
     ) -> Dict[str, Any]:
         """

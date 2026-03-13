@@ -1600,10 +1600,20 @@ The `keys` for screeners follow the format: `(PREFIX)_(SORTFIELD)_(FREQUENCY)`.
 | Key | Field | Description |
 | :--- | :--- | :--- |
 | `seq` | Sequence | Message number for tracking. |
-| `key` | Key | Subscription identifier. |
+| `key` | Key | Subscription identifier. Use `schwabClientCorrelId` from user preferences as the subscription key. |
+| 0 | Subscription Key | Passed back to the client from the request to identify a subscription this response belongs to. |
 | 1 | Account | The Account Hash where activity occurred. |
-| 2 | Message Type | Type of activity (e.g., Execution). |
+| 2 | Message Type | Type of activity (e.g., `OrderCreated`, `OrderAccepted`, `CancelAccepted`, `ExecutionCreated`, `OrderUROutCompleted`). |
 | 3 | Message Data | The core JSON data for the activity update. |
+
+**Important Note on Order Prices in ACCT_ACTIVITY:**
+Within the `Message Data` JSON, Schwab's Order Management System (ngOMS) transmits numerical values like `LimitPrice`, `Quantity`, and `PriceImprovement` using a fixed-point integer dictionary representation rather than standard floating point numbers, to prevent rounding errors.
+Format: `{"lo": "511800000", "signScale": 12}`
+
+To calculate the actual floating-point value, divide the `lo` value by `1,000,000` (10^6).
+*   *Example Limit Price:* `{"lo": "511800000"}` ➔ $511.80
+*   *Example Quantity:* `{"lo": "1000000"}` ➔ 1
+*   *Example Price Improvement:* `{"lo": "10900"}` ➔ $0.0109
 
 ### **6. Response Codes**
 

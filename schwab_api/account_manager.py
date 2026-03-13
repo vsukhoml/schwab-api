@@ -167,10 +167,13 @@ class AccountManager(StreamResponseHandler):
         if not self.stream_client:
             return
 
+        streamer_info = self.stream_client._streamer_info or {}
+        correl_id = streamer_info.get("schwabClientCorrelId", "Account Activity")
+
         self.stream_client.send(
             self.stream_client.account_activity(
-                keys="Account Activity",
-                fields="sequence,key,account,message_type,message_data",
+                keys=correl_id,
+                fields="subscription_key,account,message_type,message_data",
                 command="SUBS",
             )
         )

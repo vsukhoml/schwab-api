@@ -2,10 +2,10 @@
 set -e
 
 echo "Running black..."
-.venv/bin/black schwab_api/ tests/ portfolio.py
+.venv/bin/black schwab_api/ tests/
 
 echo "Running isort..."
-.venv/bin/isort schwab_api/ tests/ portfolio.py
+.venv/bin/isort schwab_api/ tests/
 
 echo "Running mypy..."
 .venv/bin/mypy --ignore-missing-imports schwab_api/

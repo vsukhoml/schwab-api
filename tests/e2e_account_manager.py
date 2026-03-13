@@ -65,9 +65,24 @@ def main():
         logger.error(f"Failed to update AccountManager: {e}")
         return
 
+    import datetime
+    import json
+
+    os.makedirs("e2e_dumps", exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    dump_file = os.path.join("e2e_dumps", f"stream_dump_{timestamp}.jsonl")
+
+    def raw_dump_receiver(message):
+        with open(dump_file, "a") as f:
+            if isinstance(message, dict):
+                f.write(json.dumps(message) + "\n")
+            else:
+                f.write(str(message) + "\n")
+        root_handler.handle(message)
+
     logger.info("Starting StreamClient to receive real-time price updates...")
     # This will automatically call _subscribe_positions on the AccountManager
-    stream_client.start(receiver=root_handler.handle, daemon=True)
+    stream_client.start(receiver=raw_dump_receiver, daemon=True)
 
     try:
         # Let it stream for 15 seconds

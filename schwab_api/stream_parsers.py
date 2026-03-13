@@ -284,6 +284,7 @@ SCREENER_MAP: Final = MappingProxyType(
 
 ACCT_ACTIVITY_MAP: Final = MappingProxyType(
     {
+        "0": "subscription_key",
         "seq": "sequence",
         "key": "key",
         "1": "account",
@@ -351,8 +352,8 @@ def get_numeric_fields(service_type: str, symbolic_names: Union[str, List[str]])
             numeric_ids.append(str(name))
         else:
             nid = mapping.get(name)
-            if nid:
-                numeric_ids.append(nid)
+            if nid is not None:
+                numeric_ids.append(str(nid))
             else:
                 logger.warning(
                     f"Unknown symbolic field name '{name}' for service {service_type}"
