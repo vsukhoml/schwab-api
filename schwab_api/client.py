@@ -5,8 +5,14 @@ import urllib.parse
 from functools import wraps
 from typing import Any, Dict, List, Optional, Union
 
-from .exceptions import (AuthError, InvalidRequestError, RateLimitError,
-                         ResourceNotFoundError, SchwabAPIError, ServerError)
+from .exceptions import (
+    AuthError,
+    InvalidRequestError,
+    RateLimitError,
+    ResourceNotFoundError,
+    SchwabAPIError,
+    ServerError,
+)
 from .tokens import DEFAULT_CONFIG_PATH, Tokens
 from .utils import TimeFormat, format_list, parse_params, time_convert
 
@@ -85,6 +91,7 @@ class Client:
         callback_url: str = "https://127.0.0.1:8182",
         config_path: str = DEFAULT_CONFIG_PATH,
         timeout: int = 10,
+        call_for_auth: Optional[Any] = None,
         logger: Optional[logging.Logger] = None,
     ):
         if timeout <= 0:
@@ -98,6 +105,7 @@ class Client:
             app_secret,
             callback_url,
             config_path=config_path,
+            call_for_auth=call_for_auth,
             logger=self.logger,
         )
         self.tokens.update_tokens()
@@ -128,7 +136,9 @@ class Client:
     def _request(self, method: str, path: str, **kwargs):
         self.update_tokens()
         with self._session_lock:
-            return self._session.request(method, f"{self._base_api_url}{path}", timeout=self.timeout, **kwargs)  # type: ignore[arg-type]
+            return self._session.request(
+                method, f"{self._base_api_url}{path}", timeout=self.timeout, **kwargs
+            )  # type: ignore[arg-type]
 
     def close(self):
         try:
@@ -439,7 +449,7 @@ class Client:
         """
         return self._request(
             "GET",
-            f'/marketdata/v1/{urllib.parse.quote(symbol_id, safe="")}/quotes',
+            f"/marketdata/v1/{urllib.parse.quote(symbol_id, safe='')}/quotes",
             params=parse_params({"fields": fields}),
         )
 

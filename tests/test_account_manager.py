@@ -165,11 +165,23 @@ class TestAccountManager(unittest.TestCase):
             time.sleep(0.01)
             mock_update.assert_not_called()
 
-            # Simulate an order fill
-            manager.on_account_activity({"message_type": "OrderFill"})
-            # Wait briefly for thread execution
-            time.sleep(0.1)
-            mock_update.assert_called_once()
+            # Simulate an order fill, but patch Timer so test doesn't sleep 1.5s
+            with patch("schwab_api.account_manager.threading.Timer") as mock_timer:
+                # Setup mock to return a mock timer that can be "started"
+                mock_timer_instance = MagicMock()
+                mock_timer.return_value = mock_timer_instance
+
+                manager.on_account_activity({"message_type": "OrderFill"})
+
+                mock_timer.assert_called_once()
+                self.assertEqual(mock_timer.call_args[0][0], 1.5)  # Verify 1.5s delay
+                mock_timer_instance.start.assert_called_once()
+
+                # Manually trigger the delayed_update callback
+                callback = mock_timer.call_args[0][1]
+                callback()
+
+                mock_update.assert_called_once()
 
 
 if __name__ == "__main__":

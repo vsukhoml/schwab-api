@@ -8,8 +8,7 @@ from dotenv import load_dotenv
 
 from schwab_api.client import Client
 from schwab_api.orders.common import Duration
-from schwab_api.orders.equities import (equity_buy_limit,
-                                        equity_sell_short_limit)
+from schwab_api.orders.equities import equity_buy_limit, equity_sell_short_limit
 from schwab_api.stream import StreamClient
 from schwab_api.stream_parsers import StreamResponseHandler
 

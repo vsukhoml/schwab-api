@@ -3,8 +3,6 @@ import datetime
 import json
 import logging
 import threading
-import time
-import zoneinfo
 from typing import Any, Callable, Dict, List, Optional, Union, cast
 
 from .stream_parsers import get_numeric_fields
@@ -181,7 +179,7 @@ class StreamBase:
                 else:
                     self._logger.error(e)
                     self._logger.warning(
-                        f"Stream connection lost to server, reconnecting..."
+                        "Stream connection lost to server, reconnecting..."
                     )
                     await self._wait_for_backoff()
             finally:

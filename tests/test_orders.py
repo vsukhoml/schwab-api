@@ -1,32 +1,41 @@
 import datetime
 import unittest
 
-from schwab_api.orders.common import (ComplexOrderStrategyType, Duration,
-                                      EquityInstruction, OptionInstruction,
-                                      OrderStrategyType, OrderType, Session)
-from schwab_api.orders.equities import (equity_buy_limit, equity_buy_market,
-                                        equity_buy_to_cover_limit,
-                                        equity_buy_to_cover_market,
-                                        equity_sell_limit, equity_sell_market,
-                                        equity_sell_short_limit,
-                                        equity_sell_short_market)
+from schwab_api.orders.common import (
+    ComplexOrderStrategyType,
+    Duration,
+    EquityInstruction,
+    OptionInstruction,
+    OrderStrategyType,
+    OrderType,
+    Session,
+)
+from schwab_api.orders.equities import (
+    equity_buy_limit,
+    equity_buy_market,
+    equity_sell_limit,
+    equity_sell_market,
+)
 from schwab_api.orders.generic import OrderBuilder, truncate_float
-from schwab_api.orders.options import (OptionSymbol, bear_call_vertical_close,
-                                       bear_call_vertical_open,
-                                       bear_put_vertical_close,
-                                       bear_put_vertical_open,
-                                       bull_call_vertical_close,
-                                       bull_call_vertical_open,
-                                       bull_put_vertical_close,
-                                       bull_put_vertical_open,
-                                       option_buy_to_close_limit,
-                                       option_buy_to_close_market,
-                                       option_buy_to_open_limit,
-                                       option_buy_to_open_market,
-                                       option_sell_to_close_limit,
-                                       option_sell_to_close_market,
-                                       option_sell_to_open_limit,
-                                       option_sell_to_open_market)
+from schwab_api.orders.options import (
+    OptionSymbol,
+    bear_call_vertical_close,
+    bear_call_vertical_open,
+    bear_put_vertical_close,
+    bear_put_vertical_open,
+    bull_call_vertical_close,
+    bull_call_vertical_open,
+    bull_put_vertical_close,
+    bull_put_vertical_open,
+    option_buy_to_close_limit,
+    option_buy_to_close_market,
+    option_buy_to_open_limit,
+    option_buy_to_open_market,
+    option_sell_to_close_limit,
+    option_sell_to_close_market,
+    option_sell_to_open_limit,
+    option_sell_to_open_market,
+)
 
 
 class TestTruncateFloat(unittest.TestCase):
@@ -142,7 +151,6 @@ class TestOptionSymbol(unittest.TestCase):
 
 
 class TestEquityTemplates(unittest.TestCase):
-
     def test_equity_buy_market(self):
         expected = {
             "orderType": "MARKET",
@@ -211,7 +219,6 @@ class TestEquityTemplates(unittest.TestCase):
 
 
 class TestOptionTemplates(unittest.TestCase):
-
     def test_option_buy_to_open_market(self):
         expected = {
             "orderType": "MARKET",
@@ -362,7 +369,6 @@ class TestOptionTemplates(unittest.TestCase):
 
 
 class TestVerticalTemplates(unittest.TestCase):
-
     def test_bull_call_vertical_open(self):
         expected = {
             "orderType": "NET_DEBIT",

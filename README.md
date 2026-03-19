@@ -9,6 +9,8 @@ A lightweight, efficient, and reliable Python client for the Charles Schwab Trad
 - **Advanced Order Builder:** Declarative `OrderBuilder` and templates for equities and complex multi-leg options.
 - **WebSocket Streaming:** Both synchronous (background thread) and asynchronous (`asyncio`) streaming clients with auto-reconnect, exponential backoff, and state recovery.
 - **Utility Functions:** Conversion of Yahoo Finance tickers to Schwab, direct fetch of daily price histories, and fundamentals as Pandas DataFrames (if pandas is installed).
+- **Mathematical Options Analysis:** Built-in `BlackScholesPricer` for theoretical Greeks, `calculate_gamma_exposure` (GEX) for dealer positioning, and Model-Free Implied Volatility (MFIV) calculations.
+- **Granular Exception Handling:** Specific exceptions like `RateLimitError` and `ServerError` for building resilient trading algorithms.
 
 ## Installation
 
@@ -186,6 +188,7 @@ The library includes built-in analyzers for parsing positions and option chains,
 
 ```python
 from schwab_api import OptionChainAnalyzer, PositionAnalyzer
+from schwab_api.utils import parse_option_chain_to_df
 
 # 1. Analyze your current portfolio
 positions = client.account_details(account_hash, fields="positions").json()
@@ -197,7 +200,8 @@ print(f"Options to close: {winners}")
 
 # 2. Find new options to sell (The Wheel)
 chain_json = client.option_chains("AAPL").json()
-chain = OptionChainAnalyzer(chain_json)
+df_chain = parse_option_chain_to_df(chain_json)
+chain = OptionChainAnalyzer(df_chain)
 
 # Find Cash-Secured Put candidates (30-45 Days to Expiration, 0.20-0.30 Delta)
 candidates = chain.get_put_candidates(
@@ -206,6 +210,32 @@ candidates = chain.get_put_candidates(
     min_premium_percentage=0.01
 )
 print(candidates.head())
+```
+
+### 7. Mathematical & Advanced Options Analysis
+
+The `schwab_api.math` module provides powerful quantitative tools that run locally without additional API calls.
+
+```python
+import datetime
+from schwab_api.math import BlackScholesPricer, calculate_gamma_exposure
+
+# 1. Theoretical Options Pricing
+# Calculate Greeks for a 150-strike Call expiring in 30 days
+expiration = datetime.date.today() + datetime.timedelta(days=30)
+pricer = BlackScholesPricer(
+    stock_price=145.0, 
+    strike_price=150.0, 
+    expiration_date=expiration, 
+    is_put=False, 
+    volatility=0.25
+)
+print(f"Theoretical Delta: {pricer.delta():.4f}")
+
+# 2. Dealer Gamma Exposure (GEX)
+# (Requires `df_chain` from parse_option_chain_to_df)
+# df_gex = calculate_gamma_exposure(df_chain, plot_strikes=50, net_exposure=True)
+# print(df_gex.head())
 ```
 
 ## Architecture Notes

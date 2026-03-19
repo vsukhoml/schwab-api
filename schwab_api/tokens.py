@@ -278,7 +278,7 @@ class Tokens:
 
     def _post_oauth_token(self, grant_type: str, code: Optional[str]):
         headers = {
-            "Authorization": f'Basic {base64.b64encode(bytes(f"{self._app_key}:{self._app_secret}", "utf-8")).decode("utf-8")}',
+            "Authorization": f"Basic {base64.b64encode(bytes(f'{self._app_key}:{self._app_secret}', 'utf-8')).decode('utf-8')}",
             "Content-Type": "application/x-www-form-urlencoded",
         }
         data: dict[str, Any]
@@ -359,6 +359,15 @@ class Tokens:
                         self.logger.error(
                             f"Could not get new access token. ({response.text})"
                         )
+                        if response.status_code == 400:
+                            try:
+                                with open(self._tokens_file, "w") as f:
+                                    f.write("{}")
+                                self.logger.error(
+                                    "Tokens file cleared due to invalid grant. Manual re-authentication required."
+                                )
+                            except OSError:
+                                pass
             except Exception as e:
                 self.logger.error(f"[Schwab API] Could not update access token ({e})")
 
@@ -407,7 +416,7 @@ class Tokens:
 
                     tokens_json = _get_new_tokens(auth_callback)
                     if tokens_json and self._set_tokens(now, now, tokens_json):
-                        self.logger.info(f"Tokens updated successfully.")
+                        self.logger.info("Tokens updated successfully.")
             except Exception as e:
                 now = datetime.datetime.now(datetime.timezone.utc)
                 if last_known_rt_issued < now and self._access_token_issued < now:

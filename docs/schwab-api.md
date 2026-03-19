@@ -116,7 +116,7 @@ def get_tokens(app_key, app_secret, code, callback_url):
 #### **Proactive Refresh Best Practices**
 *   **Access Token:** Refresh when within **60 seconds** of expiration to ensure seamless execution of long-running tasks.
 *   **Refresh Token:** Schwab will invalidate the client if the 7-day window expires. Proactively refresh or re-authenticate at **6.5 days**.
-*   **Concurrency Control:** If multiple processes share a token, use atomic locking (e.g., SQLite `BEGIN EXCLUSIVE`) during refresh. If two processes attempt to refresh simultaneously, Schwab may invalidate the refresh token.
+*   **Concurrency Control:** If multiple processes share a token, use atomic locking (e.g., cross-platform file locks via `fcntl`/`msvcrt`) during refresh. If two processes attempt to refresh simultaneously, Schwab may invalidate the refresh token.
 
 #### **How to Refresh**
 ```python

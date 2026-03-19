@@ -1,5 +1,4 @@
 import datetime
-from typing import Optional
 
 from .generic import OrderBuilder
 
@@ -316,8 +315,12 @@ def bull_call_vertical_open(
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` that opens a
     bull call vertical position.
     """
-    from .common import (ComplexOrderStrategyType, OptionInstruction,
-                         OrderStrategyType, OrderType)
+    from .common import (
+        ComplexOrderStrategyType,
+        OptionInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
 
     return (
         __base_builder()
@@ -338,8 +341,12 @@ def bull_call_vertical_close(
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` that closes a
     bull call vertical position.
     """
-    from .common import (ComplexOrderStrategyType, OptionInstruction,
-                         OrderStrategyType, OrderType)
+    from .common import (
+        ComplexOrderStrategyType,
+        OptionInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
 
     return (
         __base_builder()
@@ -363,8 +370,12 @@ def bear_call_vertical_open(
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` that opens a
     bear call vertical position.
     """
-    from .common import (ComplexOrderStrategyType, OptionInstruction,
-                         OrderStrategyType, OrderType)
+    from .common import (
+        ComplexOrderStrategyType,
+        OptionInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
 
     return (
         __base_builder()
@@ -385,8 +396,12 @@ def bear_call_vertical_close(
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` that closes a
     bear call vertical position.
     """
-    from .common import (ComplexOrderStrategyType, OptionInstruction,
-                         OrderStrategyType, OrderType)
+    from .common import (
+        ComplexOrderStrategyType,
+        OptionInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
 
     return (
         __base_builder()
@@ -410,8 +425,12 @@ def bull_put_vertical_open(
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` that opens a
     bull put vertical position.
     """
-    from .common import (ComplexOrderStrategyType, OptionInstruction,
-                         OrderStrategyType, OrderType)
+    from .common import (
+        ComplexOrderStrategyType,
+        OptionInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
 
     return (
         __base_builder()
@@ -432,8 +451,12 @@ def bull_put_vertical_close(
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` that closes a
     bull put vertical position.
     """
-    from .common import (ComplexOrderStrategyType, OptionInstruction,
-                         OrderStrategyType, OrderType)
+    from .common import (
+        ComplexOrderStrategyType,
+        OptionInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
 
     return (
         __base_builder()
@@ -457,8 +480,12 @@ def bear_put_vertical_open(
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` that opens a
     bear put vertical position.
     """
-    from .common import (ComplexOrderStrategyType, OptionInstruction,
-                         OrderStrategyType, OrderType)
+    from .common import (
+        ComplexOrderStrategyType,
+        OptionInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
 
     return (
         __base_builder()
@@ -479,8 +506,12 @@ def bear_put_vertical_close(
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` that closes a
     bear put vertical position.
     """
-    from .common import (ComplexOrderStrategyType, OptionInstruction,
-                         OrderStrategyType, OrderType)
+    from .common import (
+        ComplexOrderStrategyType,
+        OptionInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
 
     return (
         __base_builder()

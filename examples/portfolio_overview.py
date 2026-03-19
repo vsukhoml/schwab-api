@@ -48,13 +48,17 @@ def initialize_client() -> Optional[Client]:
 def print_account_header(account_number: str) -> None:
     """Prints a formatted header for an account."""
     header_line = "=" * 60
-    masked_acc = f"*******{account_number[-4:]}" if len(account_number) >= 4 else account_number
+    masked_acc = (
+        f"*******{account_number[-4:]}" if len(account_number) >= 4 else account_number
+    )
     print(f"\n{header_line}")
     print(f"Account: {masked_acc}")
     print(f"{header_line}")
 
 
-def display_portfolio_stats(balances: Dict[str, Any], positions: List[Dict[str, Any]]) -> None:
+def display_portfolio_stats(
+    balances: Dict[str, Any], positions: List[Dict[str, Any]]
+) -> None:
     """Parses and prints total equity, cash balance, and open position details."""
     total_equity = balances.get("liquidationValue", 0.0)
     cash_balance = balances.get("cashBalance", 0.0)
@@ -109,7 +113,7 @@ def display_working_orders(orders: List[Dict[str, Any]]) -> None:
             leg_inst = leg.get("instruction", "")
             leg_sym = leg.get("instrument", {}).get("symbol", "")
             leg_qty = leg.get("quantity", 0)
-            
+
             instruction = f"{leg_inst} {leg_qty} {leg_sym}"
             extra_legs = len(order_legs) - 1
             if extra_legs > 0:
@@ -137,12 +141,12 @@ def process_account(client: Client, account_hash: str, account_number: str) -> N
     try:
         now = datetime.datetime.now(datetime.timezone.utc)
         thirty_days_ago = now - datetime.timedelta(days=30)
-        
+
         orders_resp = client.account_orders(
-            account_hash, 
+            account_hash,
             status="WORKING",
             fromEnteredTime=thirty_days_ago,
-            toEnteredTime=now
+            toEnteredTime=now,
         )
         orders = orders_resp.json()
 
@@ -172,7 +176,7 @@ def main() -> None:
     for acc in accounts:
         acc_hash = acc.get("hashValue")
         acc_num = acc.get("accountNumber", "Unknown")
-        
+
         if acc_hash:
             process_account(client, acc_hash, acc_num)
         else:

@@ -2,7 +2,7 @@ import datetime
 import json
 import unittest
 
-from schwab_api.utils import TIMEZONE_EST, decode_schwab_dates
+from schwab_api.utils import decode_schwab_dates
 
 
 class TestDateParsing(unittest.TestCase):

@@ -142,23 +142,47 @@ class AccountManager(StreamResponseHandler):
     def _subscribe_positions(self) -> None:
         """
         Automatically subscribes to Level 1 data for all current position symbols.
-
-        Issues a `LEVELONE_EQUITIES` "ADD" command to the attached `StreamClient`.
-        This requests `symbol`, `bid_price`, `ask_price`, `last_price`, and `mark_price`
-        so that `on_level_one_equity` can continuously update position market values.
+        Issues ADD commands mapped by assetType to the appropriate stream service.
         """
         if not self.stream_client:
             return
 
-        symbols = list(self.positions.keys())
-        # Add basic fields needed for updating positions
-        self.stream_client.send(
-            self.stream_client.level_one_equities(
-                keys=symbols,
-                fields=["symbol", "bid_price", "ask_price", "last_price", "mark_price"],
-                command="ADD",
+        equity_symbols = []
+        option_symbols = []
+        future_symbols = []
+
+        for symbol, acc_dict in self.positions.items():
+            first_acc = next(iter(acc_dict.values()))
+            asset_type = first_acc.get("assetType", "UNKNOWN")
+
+            if asset_type == "EQUITY":
+                equity_symbols.append(symbol)
+            elif asset_type == "OPTION":
+                option_symbols.append(symbol)
+            elif asset_type == "FUTURE":
+                future_symbols.append(symbol)
+            else:
+                equity_symbols.append(symbol)
+
+        fields = ["symbol", "bid_price", "ask_price", "last_price", "mark_price"]
+        if equity_symbols:
+            self.stream_client.send(
+                self.stream_client.level_one_equities(
+                    keys=equity_symbols, fields=fields, command="ADD"
+                )
             )
-        )
+        if option_symbols:
+            self.stream_client.send(
+                self.stream_client.level_one_options(
+                    keys=option_symbols, fields=fields, command="ADD"
+                )
+            )
+        if future_symbols:
+            self.stream_client.send(
+                self.stream_client.level_one_futures(
+                    keys=future_symbols, fields=fields, command="ADD"
+                )
+            )
 
     def _subscribe_account_activity(self) -> None:
         """
@@ -179,15 +203,20 @@ class AccountManager(StreamResponseHandler):
         )
 
     def on_level_one_equity(self, update: Dict[str, Any]) -> None:
+        self._handle_quote_update(update, multiplier=1)
+
+    def on_level_one_option(self, update: Dict[str, Any]) -> None:
+        from .utils import OPTION_CONTRACT_SIZE
+
+        self._handle_quote_update(update, multiplier=OPTION_CONTRACT_SIZE)
+
+    def on_level_one_future(self, update: Dict[str, Any]) -> None:
+        self._handle_quote_update(update, multiplier=1)
+
+    def _handle_quote_update(self, update: Dict[str, Any], multiplier: int) -> None:
         """
-        Callback automatically triggered when Level 1 Equity data is received via the stream.
-
-        This method will cache the incoming quote data in `self.quotes` and, if the symbol is
-        present in `self.positions`, it will recalculate the real-time `marketValue` for all
-        accounts holding that position based on the streamed `mark_price` (or `last_price` if mark is unavailable).
-
-        Args:
-            update (Dict[str, Any]): The parsed Level 1 Equity payload.
+        Caches the incoming quote data and recalculates the real-time `marketValue`
+        for all accounts holding the position.
         """
         symbol = update.get("symbol")
         if not symbol:
@@ -210,7 +239,7 @@ class AccountManager(StreamResponseHandler):
                 for acc_num in self.positions[symbol]:
                     pos = self.positions[symbol][acc_num]
                     net_qty = pos["longQuantity"] - pos["shortQuantity"]
-                    pos["marketValue"] = net_qty * price
+                    pos["marketValue"] = net_qty * price * multiplier
 
     def on_account_activity(self, update: Dict[str, Any]) -> None:
         """
@@ -230,8 +259,19 @@ class AccountManager(StreamResponseHandler):
             logger.info(
                 "Order fill detected via Stream! Initiating background REST refresh of positions and balances."
             )
-            # Run update in a separate thread so we don't block the WebSocket receiver loop.
-            threading.Thread(target=self.update, daemon=True).start()
+            with self._update_lock:
+                if not getattr(self, "_update_pending", False):
+                    self._update_pending = True
+
+                    def delayed_update():
+                        try:
+                            self.update()
+                        finally:
+                            with self._update_lock:
+                                self._update_pending = False
+
+                    # Debounce: Wait 1.5s to let a flurry of partial fills complete before hitting the REST API
+                    threading.Timer(1.5, delayed_update).start()
 
     def get_position_totals(self, symbol: str) -> Dict[str, float]:
         """

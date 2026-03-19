@@ -1,7 +1,5 @@
-import asyncio
-import json
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Optional, Type
+from typing import Optional
 
 
 class BaseWSClient(ABC):
@@ -143,7 +141,7 @@ class CurlCffiWSClient(BaseWSClient):
 def get_ws_client() -> BaseWSClient:
     """Factory to get the best available WebSocket client."""
     try:
-        import curl_cffi
+        import curl_cffi  # noqa: F401
 
         return CurlCffiWSClient()
     except ImportError:

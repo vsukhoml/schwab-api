@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 
-echo "Running black..."
-.venv/bin/black schwab_api/ tests/
+echo "Running ruff format..."
+.venv/bin/ruff format schwab_api/ tests/
 
-echo "Running isort..."
-.venv/bin/isort schwab_api/ tests/
+echo "Running ruff check..."
+.venv/bin/ruff check --fix schwab_api/ tests/
 
 echo "Running mypy..."
 .venv/bin/mypy --ignore-missing-imports schwab_api/

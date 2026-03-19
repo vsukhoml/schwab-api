@@ -1,5 +1,3 @@
-from enum import Enum
-
 from .common import Duration, Session
 from .generic import OrderBuilder
 
@@ -12,8 +10,11 @@ def equity_buy_market(symbol: str, quantity: int) -> "OrderBuilder":
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` for an equity
     buy market order.
     """
-    from .common import (Duration, EquityInstruction, OrderStrategyType,
-                         OrderType, Session)
+    from .common import (
+        EquityInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
     from .generic import OrderBuilder
 
     return (
@@ -31,8 +32,11 @@ def equity_buy_limit(symbol: str, quantity: int, price: float) -> "OrderBuilder"
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` for an equity
     buy limit order.
     """
-    from .common import (Duration, EquityInstruction, OrderStrategyType,
-                         OrderType, Session)
+    from .common import (
+        EquityInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
     from .generic import OrderBuilder
 
     return (
@@ -55,8 +59,11 @@ def equity_sell_market(symbol: str, quantity: int) -> "OrderBuilder":
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` for an equity
     sell market order.
     """
-    from .common import (Duration, EquityInstruction, OrderStrategyType,
-                         OrderType, Session)
+    from .common import (
+        EquityInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
     from .generic import OrderBuilder
 
     return (
@@ -74,8 +81,11 @@ def equity_sell_limit(symbol: str, quantity: int, price: float) -> "OrderBuilder
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` for an equity
     sell limit order.
     """
-    from .common import (Duration, EquityInstruction, OrderStrategyType,
-                         OrderType, Session)
+    from .common import (
+        EquityInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
     from .generic import OrderBuilder
 
     return (
@@ -98,8 +108,11 @@ def equity_sell_short_market(symbol: str, quantity: int) -> "OrderBuilder":
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` for an equity
     short sell market order.
     """
-    from .common import (Duration, EquityInstruction, OrderStrategyType,
-                         OrderType, Session)
+    from .common import (
+        EquityInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
     from .generic import OrderBuilder
 
     return (
@@ -117,8 +130,11 @@ def equity_sell_short_limit(symbol: str, quantity: int, price: float) -> "OrderB
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` for an equity
     short sell limit order.
     """
-    from .common import (Duration, EquityInstruction, OrderStrategyType,
-                         OrderType, Session)
+    from .common import (
+        EquityInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
     from .generic import OrderBuilder
 
     return (
@@ -141,8 +157,11 @@ def equity_buy_to_cover_market(symbol: str, quantity: int) -> "OrderBuilder":
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` for an equity
     buy-to-cover market order.
     """
-    from .common import (Duration, EquityInstruction, OrderStrategyType,
-                         OrderType, Session)
+    from .common import (
+        EquityInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
     from .generic import OrderBuilder
 
     return (
@@ -162,8 +181,11 @@ def equity_buy_to_cover_limit(
     Returns a pre-filled :class:`~schwab_api.orders.generic.OrderBuilder` for an equity
     buy-to-cover limit order.
     """
-    from .common import (Duration, EquityInstruction, OrderStrategyType,
-                         OrderType, Session)
+    from .common import (
+        EquityInstruction,
+        OrderStrategyType,
+        OrderType,
+    )
     from .generic import OrderBuilder
 
     return (

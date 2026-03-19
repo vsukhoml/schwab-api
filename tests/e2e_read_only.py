@@ -398,13 +398,15 @@ def main():
         from schwab_api import get_numeric_fields
         from schwab_api.stream_parsers import StreamResponseHandler
         from schwab_api.trading import OptionChainAnalyzer
+        from schwab_api.utils import parse_option_chain_to_df
 
         # Dynamically discover an option to track
         goog_chain = client.option_chains("GOOG", strikeCount=2).json()
-        analyzer = OptionChainAnalyzer(goog_chain)
+        goog_chain_df = parse_option_chain_to_df(goog_chain)
+        analyzer = OptionChainAnalyzer(goog_chain_df)
 
         # Get closest call to the money with low DTE
-        candidates = analyzer.filter_options(option_type="CALL", min_dte=0, max_dte=30)
+        candidates = analyzer.filter_options(is_put=False, min_dte=0, max_dte=30)
 
         if not candidates.empty:
             # Sort by lowest DTE first, then by closest delta to 0.50 (ATM)

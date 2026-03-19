@@ -3,7 +3,6 @@ import os
 import queue
 import ssl
 import subprocess
-import tempfile
 import threading
 import urllib.parse
 import webbrowser
@@ -19,7 +18,7 @@ def manual_auth_flow(
     """Fallback manual authentication flow."""
     _logger = logger or logging.getLogger(__name__)
     print(
-        f"\n[Schwab API] Please open the following URL in your browser to authenticate:"
+        "\n[Schwab API] Please open the following URL in your browser to authenticate:"
     )
     print(f"\n{auth_url}\n")
     try:
@@ -73,14 +72,14 @@ def automated_auth_flow(
     # We only support localhost/127.0.0.1 for the automated flow
     if parsed_url.hostname not in ("127.0.0.1", "localhost"):
         _logger.warning(
-            f"Automated flow requires 127.0.0.1 or localhost as callback. Falling back to manual flow."
+            "Automated flow requires 127.0.0.1 or localhost as callback. Falling back to manual flow."
         )
         return manual_auth_flow(auth_url, callback_url, logger=_logger)
 
     port = parsed_url.port if parsed_url.port else 443
     if port < 1024:
         _logger.warning(
-            f"Automated flow on ports < 1024 might require root privileges. Falling back to manual flow if server fails to start."
+            "Automated flow on ports < 1024 might require root privileges. Falling back to manual flow if server fails to start."
         )
 
     oauth_queue: queue.Queue = queue.Queue()
@@ -146,7 +145,7 @@ def automated_auth_flow(
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
 
-        print(f"\n[Schwab API] Please authenticate in the opened browser window.")
+        print("\n[Schwab API] Please authenticate in the opened browser window.")
         print(f"If the browser doesn't open, navigate to:\n{auth_url}\n")
         if cert_path:
             print(
@@ -171,7 +170,7 @@ def automated_auth_flow(
             return result_url
 
         except queue.Empty:
-            print(f"\n[Schwab API] Timed out waiting for browser callback.")
+            print("\n[Schwab API] Timed out waiting for browser callback.")
             server.shutdown()
             server.server_close()
             return manual_auth_flow(auth_url, callback_url, logger=_logger)

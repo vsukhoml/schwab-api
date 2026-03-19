@@ -5,6 +5,7 @@ from typing import Any
 from pytz import timezone
 
 TIMEZONE_EST = timezone("America/New_York")
+OPTION_CONTRACT_SIZE = 100
 
 
 class TimeFormat(Enum):
@@ -77,16 +78,16 @@ def to_schwab(t: str) -> str:
     return t
 
 
-def format_list(l: Any | None) -> str | None:
+def format_list(lst: Any | None) -> str | None:
     """Convert python list or iterable to comma-separated string."""
-    if l is None:
+    if lst is None:
         return None
-    elif isinstance(l, str):
-        return l
-    elif hasattr(l, "__iter__"):
-        return ",".join(map(str, l))
+    elif isinstance(lst, str):
+        return lst
+    elif hasattr(lst, "__iter__"):
+        return ",".join(map(str, lst))
     else:
-        return str(l)
+        return str(lst)
 
 
 def parse_params(params: dict) -> dict:
@@ -156,6 +157,121 @@ def parse_price_history_to_df(history_json: dict) -> Any:
     return df
 
 
+def parse_option_chain_to_df(
+    option_chains_json: dict, evaluation_date: datetime.date | None = None
+) -> Any:
+    """
+    Parse Schwab option chain JSON response into a Pandas DataFrame.
+
+    Returns a DataFrame with the following format:
+    - Index: symbol (str) - e.g. "AAPL  240809C00150000"
+    - Columns:
+        - ticker (str): Underlying symbol
+        - stock_price (float): Underlying price at the time of the request
+        - expiration_date (datetime.date): Expiration date of the option
+        - days_to_expiration (int): DTE calculated against the evaluation_date
+        - is_put (bool): True if the option is a PUT, False if CALL
+        - strike_price (float): Strike price
+        - bid (float): Bid price
+        - ask (float): Ask price
+        - last (float): Last traded price
+        - mark (float): Mark price
+        - option_price (float): Mid price ((bid + ask) / 2)
+        - delta (float): Delta
+        - gamma (float): Gamma
+        - theta (float): Theta
+        - vega (float): Vega
+        - rho (float): Rho
+        - totalVolume (int): Total volume
+        - openInterest (int): Open interest
+        - inTheMoney (bool): True if the option is in the money
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        raise ImportError(
+            "pandas is required for this function. Install it using 'pip install pandas'."
+        )
+
+    evaluation_date = evaluation_date or datetime.date.today()
+    underlying_price = option_chains_json.get("underlyingPrice")
+    symbol = option_chains_json.get("symbol")
+
+    call_chains = option_chains_json.get("callExpDateMap", {})
+    put_chains = option_chains_json.get("putExpDateMap", {})
+
+    columns = [
+        "symbol",
+        "ticker",
+        "stock_price",
+        "expiration_date",
+        "days_to_expiration",
+        "is_put",
+        "strike_price",
+        "bid",
+        "ask",
+        "last",
+        "mark",
+        "option_price",
+        "delta",
+        "gamma",
+        "theta",
+        "vega",
+        "rho",
+        "volatility",
+        "totalVolume",
+        "openInterest",
+        "inTheMoney",
+    ]
+
+    chain_data = []
+    for opt_type_str, chains in [
+        ("CALL", call_chains),
+        ("PUT", put_chains),
+    ]:
+        for exp_date_key, strikes in chains.items():
+            parts = exp_date_key.split(":")
+            exp_date_str = parts[0]
+            exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date()
+            dte = (exp_date - evaluation_date).days
+
+            for strike_key, option_list in strikes.items():
+                for opt in option_list:
+                    bid = opt.get("bid", 0.0)
+                    ask = opt.get("ask", 0.0)
+
+                    data = {
+                        "symbol": opt.get("symbol"),
+                        "ticker": symbol,
+                        "stock_price": underlying_price,
+                        "expiration_date": exp_date,
+                        "days_to_expiration": dte,
+                        "is_put": opt_type_str == "PUT",
+                        "strike_price": float(strike_key),
+                        "bid": bid,
+                        "ask": ask,
+                        "last": opt.get("last", 0.0),
+                        "mark": opt.get("mark", 0.0),
+                        "option_price": (bid + ask) / 2.0,  # Mid price
+                        "delta": opt.get("delta", 0.0),
+                        "gamma": opt.get("gamma", 0.0),
+                        "theta": opt.get("theta", 0.0),
+                        "vega": opt.get("vega", 0.0),
+                        "rho": opt.get("rho", 0.0),
+                        "volatility": opt.get("volatility", 0.0),
+                        "totalVolume": opt.get("totalVolume", 0),
+                        "openInterest": opt.get("openInterest", 0),
+                        "inTheMoney": opt.get("inTheMoney", False),
+                    }
+                    chain_data.append(data)
+
+    df = pd.DataFrame(chain_data, columns=columns)
+    if not df.empty:
+        df.set_index("symbol", inplace=True)
+
+    return df
+
+
 def extract_positions(account_details_json: list) -> dict:
     """
     Parses a list of account details and extracts a consolidated dictionary of positions.
@@ -189,6 +305,92 @@ def extract_positions(account_details_json: list) -> dict:
             }
 
     return positions
+
+
+def parse_schwab_equity_position(pos: dict, instrument: dict) -> dict:
+    """
+    Parses a raw Schwab equity position dict into a generic dictionary.
+    """
+    qty = abs(pos.get("longQuantity", 0) - pos.get("shortQuantity", 0))
+    return {
+        "ticker": instrument.get("symbol"),
+        "quantity": pos.get("longQuantity", 0) - pos.get("shortQuantity", 0),
+        "average_price": pos.get("averagePrice", 0.0),
+        "current_price": abs(pos.get("marketValue", 0.0) / (qty if qty != 0 else 1)),
+    }
+
+
+def parse_schwab_option_symbol(symbol: str) -> dict:
+    """
+    Parses a Schwab option symbol: "RDDT  240719P00050500"
+    Returns a dict with 'expiration_date', 'is_put', and 'strike_price'.
+    """
+    option_part = symbol[-15:]
+
+    exp_date_str = option_part[:6]
+    opt_type_str = option_part[6:7]  # 'P' or 'C'
+    strike_str = option_part[7:]
+
+    try:
+        exp_date = datetime.datetime.strptime(exp_date_str, "%y%m%d").date()
+    except ValueError:
+        exp_date = datetime.date.today()
+
+    try:
+        strike = int(strike_str) / 1000.0
+    except ValueError:
+        strike = 0.0
+
+    return {
+        "expiration_date": exp_date,
+        "is_put": opt_type_str == "P",
+        "strike_price": strike,
+    }
+
+
+def parse_schwab_option_position(
+    pos: dict, instrument: dict, evaluation_date: datetime.date | None = None
+) -> dict | None:
+    """
+    Parses a raw Schwab option position dict into a generic dictionary, calculating
+    DTE, Greeks-related hints, and PnL.
+    """
+    symbol = str(instrument.get("symbol", ""))
+    if not symbol:
+        return None
+
+    ticker = instrument.get("underlyingSymbol")
+    evaluation_date = evaluation_date or datetime.date.today()
+
+    parsed = parse_schwab_option_symbol(symbol)
+    exp_date = parsed["expiration_date"]
+    is_put = parsed["is_put"]
+    strike = parsed["strike_price"]
+
+    qty = pos.get("longQuantity", 0) - pos.get("shortQuantity", 0)
+    avg_price = pos.get("averagePrice", 0.0)
+    market_val = pos.get("marketValue", 0.0)
+
+    # Current option price
+    opt_price = 0.0
+    if qty != 0:
+        opt_price = abs(market_val / (qty * OPTION_CONTRACT_SIZE))
+
+    profit = opt_price - avg_price if qty > 0 else avg_price - opt_price
+
+    return {
+        "symbol": symbol,
+        "ticker": ticker,
+        "is_put": is_put,
+        "expiration_date": exp_date,
+        "strike_price": strike,
+        "quantity": qty,
+        "average_price": avg_price,
+        "current_price": opt_price,
+        "profit": profit * OPTION_CONTRACT_SIZE * abs(qty),
+        "profit_percentage": ((profit / avg_price) * 100 if avg_price > 0 else 0.0),
+        "days_to_expiration": (exp_date - evaluation_date).days,
+    }
 
 
 class UnsuccessfulOrderException(ValueError):
