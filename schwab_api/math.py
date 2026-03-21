@@ -10,8 +10,26 @@ logger = logging.getLogger(__name__)
 
 class BlackScholesPricer:
     """
-    A standalone Black-Scholes options pricing calculator for generating theoretical Greeks.
-    Does not depend on external APIs, relying solely on provided parameters.
+    Standalone Black-Scholes-Merton (BSM) options pricing calculator for theoretical Greeks.
+
+    Implements the continuous dividend yield extension of Black-Scholes (Merton 1973).
+    All Greeks are computed from precomputed ``_d1`` / ``_d2`` values to avoid redundant
+    calculations when calling multiple Greek methods on the same instance.
+
+    Requires ``scipy`` (``pip install scipy`` or ``pip install schwab_api[scipy]``).
+
+    Example::
+
+        from schwab_api.math import BlackScholesPricer
+        import datetime
+
+        pricer = BlackScholesPricer(
+            stock_price=450.0, strike_price=460.0,
+            expiration_date=datetime.date(2025, 6, 20),
+            is_put=False, volatility=0.18, risk_free_rate=0.05,
+        )
+        print(pricer.compute_all())
+        # {'delta': 0.44, 'gamma': 0.012, 'theta': -0.08, 'vega': 0.18, 'rho': 0.19}
     """
 
     def __init__(
@@ -26,16 +44,23 @@ class BlackScholesPricer:
         evaluation_date: Optional[datetime.date] = None,
     ):
         """
-        Initializes the pricer.
+        Initializes the pricer and precomputes d1/d2.
 
-        :param stock_price: Current price of the underlying asset.
-        :param strike_price: Strike price of the option.
-        :param expiration_date: Expiration date of the option.
-        :param is_put: True if the option is a put, False if it is a call.
-        :param volatility: Implied volatility as a decimal (e.g. 0.20 for 20%).
-        :param risk_free_rate: Annual risk-free interest rate as a decimal (default 0.05 for 5%).
-        :param dividend_yield: Annual continuous dividend yield as a decimal (default 0.0).
-        :param evaluation_date: Date to evaluate from (default is today).
+        Args:
+            stock_price (float): Current price of the underlying asset (S).
+            strike_price (float): Strike price of the option (K).
+            expiration_date (datetime.date): Expiration date of the option.
+            is_put (bool): True for a put option, False for a call option.
+            volatility (float): Implied volatility as a decimal (e.g. ``0.20`` for 20%).
+                Clamped to a small positive value if non-positive to avoid division by zero.
+            risk_free_rate (float): Annualised continuous risk-free rate (e.g. ``0.05`` for 5%).
+                Defaults to 0.05.
+            dividend_yield (float): Continuous annualised dividend yield (q). Defaults to 0.0.
+            evaluation_date (datetime.date | None): Date from which to measure time to
+                expiration. Defaults to ``datetime.date.today()``.
+
+        Raises:
+            ImportError: If ``scipy`` is not installed.
         """
         try:
             from scipy.stats import norm
@@ -83,14 +108,37 @@ class BlackScholesPricer:
         self._d2 = self._d1 - v * math.sqrt(t)
 
     def delta(self) -> float:
-        """Calculates theoretical Delta."""
+        """
+        Theoretical Delta — rate of change of option price with respect to the underlying.
+
+        Formula (Merton continuous dividend extension):
+            Call: Δ = e^{-q·T} · N(d1)
+            Put:  Δ = -e^{-q·T} · N(-d1)
+
+        Returns:
+            float: Delta in the range (-1, 0) for puts and (0, 1) for calls.
+                At-the-money options have |Δ| ≈ 0.50; deep-in-the-money options
+                approach ±1.
+        """
         if not self.is_put:
             return math.exp(-self.dividend_yield * self._t) * self.norm.cdf(self._d1)
         else:
             return -math.exp(-self.dividend_yield * self._t) * self.norm.cdf(-self._d1)
 
     def gamma(self) -> float:
-        """Calculates theoretical Gamma."""
+        """
+        Theoretical Gamma — rate of change of Delta with respect to the underlying.
+
+        Formula:
+            Γ = e^{-q·T} · N'(d1) / (S · σ · √T)
+
+        where N'(x) is the standard normal PDF.
+
+        Returns:
+            float: Gamma (always non-negative). Highest for at-the-money options near
+                expiration. Used to estimate the convexity of the position; large gamma
+                means delta hedges require frequent rebalancing.
+        """
         return (
             math.exp(-self.dividend_yield * self._t)
             * self.norm.pdf(self._d1)
@@ -98,7 +146,19 @@ class BlackScholesPricer:
         )
 
     def theta(self) -> float:
-        """Calculates theoretical Theta (decay per day)."""
+        """
+        Theoretical Theta — time decay of option price per calendar day.
+
+        Formula (per year, then divided by 365):
+            Call: Θ/yr = -(S·σ·e^{-q·T}·N'(d1))/(2√T) - r·K·e^{-r·T}·N(d2) + q·S·e^{-q·T}·N(d1)
+            Put:  Θ/yr = -(S·σ·e^{-q·T}·N'(d1))/(2√T) + r·K·e^{-r·T}·N(-d2) - q·S·e^{-q·T}·N(-d1)
+
+        Returns:
+            float: Daily theta in dollars per option contract (before multiplying by
+                ``OPTION_CONTRACT_SIZE``). Almost always negative for long options,
+                meaning the option loses value as time passes. Short-option sellers
+                profit from positive time decay.
+        """
         S = self.stock_price
         K = self.strike_price
         r = self.risk_free_rate
@@ -123,7 +183,20 @@ class BlackScholesPricer:
         return theta_annual / 365.0
 
     def vega(self) -> float:
-        """Calculates theoretical Vega (price change per 1% change in IV)."""
+        """
+        Theoretical Vega — option price sensitivity to a 1% change in implied volatility.
+
+        Formula:
+            V = S · e^{-q·T} · √T · N'(d1) / 100
+
+        The division by 100 converts from "per unit σ" to "per 1% σ", matching the
+        market convention where vega is quoted per percentage-point move in IV.
+
+        Returns:
+            float: Dollar change in option value for a +1 percentage-point increase in
+                IV (e.g. vega=0.18 means the option gains $0.18 when IV rises from 20%
+                to 21%). Vega is always positive and symmetric for calls and puts.
+        """
         return (
             self.stock_price
             * math.exp(-self.dividend_yield * self._t)
@@ -133,7 +206,21 @@ class BlackScholesPricer:
         )
 
     def rho(self) -> float:
-        """Calculates theoretical Rho (price change per 1% change in interest rate)."""
+        """
+        Theoretical Rho — option price sensitivity to a 1% change in the risk-free rate.
+
+        Formula:
+            Call: ρ = K·T·e^{-r·T}·N(d2) / 100
+            Put:  ρ = -K·T·e^{-r·T}·N(-d2) / 100
+
+        The division by 100 converts from "per unit r" to "per 1% r".
+
+        Returns:
+            float: Dollar change in option value for a +1 percentage-point rise in the
+                risk-free rate. Calls have positive rho (higher rates → call worth more);
+                puts have negative rho. Rho is usually the smallest Greek for short-dated
+                options but becomes meaningful for long-dated LEAPS.
+        """
         if not self.is_put:
             return (
                 self.strike_price
@@ -152,7 +239,14 @@ class BlackScholesPricer:
             )
 
     def compute_all(self) -> dict:
-        """Returns a dictionary containing all Greeks."""
+        """
+        Returns all five theoretical Greeks as a single dict.
+
+        Returns:
+            dict: Keys are ``'delta'``, ``'gamma'``, ``'theta'``, ``'vega'``, ``'rho'``.
+                Each value is computed once from the precomputed d1/d2 values.
+                See individual methods for units and interpretation.
+        """
         return {
             "delta": self.delta(),
             "gamma": self.gamma(),
@@ -166,13 +260,55 @@ def calculate_gamma_exposure(
     df: Any, plot_strikes: int = 50, net_exposure: bool = False
 ) -> Any:
     """
-    Calculates Gamma Exposure (GEX) across option chains, allowing for visualization
-    of dealer positioning.
+    Calculates Dealer Gamma Exposure (GEX) across an option chain.
 
-    :param df: Pandas DataFrame containing option chain data (e.g. from parse_option_chain_to_df).
-    :param plot_strikes: Number of strike_prices closest to the money to include.
-    :param net_exposure: Whether to calculate net gamma exposure per strike.
-    :return: Pandas DataFrame with gamma exposure data.
+    GEX estimates the aggregate dollar-gamma that market-makers must hedge for each
+    strike level.  When dealers are net-short gamma (typically from selling puts to
+    retail) they must buy the underlying as it falls and sell as it rises, *amplifying*
+    moves.  When net-long gamma they act as a stabilising force.
+
+    **Formula (per option row):**
+
+        GEX = S · Γ_signed · OI · contract_size · S · 0.01
+
+    where ``Γ_signed = +Γ`` for calls and ``-Γ`` for puts, reflecting the
+    SqueezeMetrics convention that dealers are assumed short calls / long puts.
+    The two ``S`` multiplications and the ``0.01`` factor convert raw gamma (Δ/$ per
+    $ move) to a dollar exposure for a 1% move in the underlying.
+
+    Args:
+        df (Any): Pandas DataFrame produced by ``parse_option_chain_to_df``.
+            Must contain columns: ``strike_price``, ``gamma``, ``is_put``,
+            ``openInterest``, ``stock_price``.
+        plot_strikes (int): Number of strikes closest to the current underlying price
+            to include in the result. Defaults to 50.
+        net_exposure (bool): If ``True``, sum call and put GEX per strike into a single
+            net value (positive = dealers net-long gamma at that strike).
+            If ``False`` (default), return one row per option contract.
+
+    Returns:
+        pandas.DataFrame: Sorted descending by ``gamma_exposure``.
+
+        When ``net_exposure=False`` columns are:
+            ``symbol``, ``strike_price``, ``gamma_exposure``, ``expiration_date``, ``is_call``
+
+        When ``net_exposure=True`` columns are:
+            ``strike_price``, ``gamma_exposure``
+
+        Returns an empty DataFrame if ``df`` is empty.
+
+    Raises:
+        ValueError: If ``df`` does not contain a ``stock_price`` column.
+
+    Example::
+
+        from schwab_api.utils import parse_option_chain_to_df
+        from schwab_api.math import calculate_gamma_exposure
+
+        df_chain = parse_option_chain_to_df(client.option_chains("SPY").json())
+        gex = calculate_gamma_exposure(df_chain, net_exposure=True)
+        # Positive strikes are "gamma walls"; negative are dealer short-gamma zones.
+        print(gex.head())
     """
     import pandas as pd
 
@@ -259,38 +395,71 @@ def calculate_mfiv_single_expiry(
     risk_free_rate: float,
     dividend_yield: float = 0.0,
 ) -> float:
-    import warnings
-    import numpy as np
-
     """
-    Calculates the Model-Free Implied Volatility (MFIV) for a single expiration
-    date, based on the methodology implemented in the R script R.MFIV/R/MFIV.R
-    (https://github.com/m-g-h/R.MFIV).
+    Calculates the Model-Free Implied Volatility (MFIV) for a **single** expiration,
+    following the CBOE VIX White Paper methodology as implemented in the R package
+    ``R.MFIV`` (https://github.com/m-g-h/R.MFIV).
 
-    This represents the volatility derived from the options for one specific
-    maturity. A full VIX-like index requires calculating this for two maturities
-    bracketing the target period (e.g., 30 days) and then interpolating.
+    Unlike Black-Scholes IV, MFIV does not assume a model for the underlying's price
+    process. Instead it integrates the entire observed option smile:
+
+        σ² = (2/T) · Σᵢ (ΔKᵢ / Kᵢ²) · e^{rT} · Q(Kᵢ)  −  (1/T) · (F/K₀ − 1)²
+
+    where Q(Kᵢ) is the out-of-the-money option price at strike Kᵢ, ΔKᵢ is the
+    half-distance to neighbouring strikes (trapezoidal integration), F is the forward
+    price, and K₀ is the highest strike at or below F.
+
+    **This function computes the MFIV for one expiry.** To produce a VIX-like 30-day
+    index, call this function for the near and far bracketing expiries and then call
+    ``calculate_vix_like_index`` to interpolate.
 
     Args:
-        stock_price (float): Current price of the underlying asset.
-        strike_prices (Any): Array of option strike prices.
-        time_to_maturity (float): Time to expiration in years (e.g., 30/365.0).
-        option_prices (Any): Array of option market prices (mid-price).
-                                          Must correspond to the strike_prices array.
-        is_puts (Any): Array of boolean values (True for put, False for call).
-                                           Must correspond to the strike_prices array.
-        risk_free_rate (float): The risk-free interest rate corresponding to the
-                                time_to_maturity (annualized).
-        dividend_yield (float, optional): Continuous annualized dividend yield.
-                                          Defaults to 0.0.
+        stock_price (float): Current spot price of the underlying (S > 0).
+        strike_prices (Any): 1-D array-like of option strike prices. Does not need to
+            be sorted; the function sorts internally.
+        time_to_maturity (float): Time to expiration in years (e.g., ``30/365.0``).
+            Must be > 0.
+        option_prices (Any): 1-D array-like of mid-prices ``(bid+ask)/2`` for each
+            option. Must be the same length as ``strike_prices``.
+        is_puts (Any): 1-D array-like of booleans — ``True`` for put, ``False`` for
+            call. Must be the same length as ``strike_prices``.
+        risk_free_rate (float): Annualised, continuously-compounded risk-free rate
+            matching the option's tenor (e.g. ``0.05`` for 5%).
+        dividend_yield (float): Continuous annualised dividend yield. Defaults to 0.0.
 
     Returns:
-        float: The calculated model-free implied volatility (annualized, not %).
-               Returns np.nan if calculation cannot be completed (e.g., insufficient data).
+        float: Annualised model-free implied volatility as a decimal (e.g. ``0.18``
+            means 18%). Returns ``numpy.nan`` when the calculation cannot complete
+            due to insufficient contributing strikes (< 2) or all-zero prices.
 
     Raises:
-        ValueError: If input arrays have inconsistent lengths or time_to_maturity <= 0.
+        ValueError: If any of the three arrays have inconsistent lengths, if
+            ``time_to_maturity <= 0``, or if ``stock_price <= 0``.
+
+    Notes:
+        - Options with prices ≤ 1e-6 are dropped as illiquid before integration.
+        - Duplicate strikes emit a ``warnings.warn`` but are not rejected; the
+          duplicate at K₀ is averaged (call + put) as per the VIX methodology.
+        - A negative variance can result from poor data quality (wide spreads, sparse
+          strikes). The function clamps to 0 and warns rather than returning ``nan``.
+
+    Example::
+
+        from schwab_api.math import calculate_mfiv_single_expiry
+        import numpy as np
+
+        iv = calculate_mfiv_single_expiry(
+            stock_price=450.0,
+            strike_prices=[420, 430, 440, 450, 460, 470, 480],
+            time_to_maturity=30/365.0,
+            option_prices=[30.1, 21.4, 13.2, 7.5, 3.8, 1.6, 0.5],
+            is_puts=[True]*4 + [False]*3,
+            risk_free_rate=0.05,
+        )
+        print(f"30-day MFIV: {iv:.4f}")  # e.g. 0.1823
     """
+    import warnings
+    import numpy as np
 
     # --- Input Validation and Preparation ---
     if not (len(strike_prices) == len(option_prices) == len(is_puts)):
@@ -461,11 +630,115 @@ def calculate_mfiv_single_expiry(
     return volatility
 
 
+def calculate_vix_like_index(
+    near_df: Any,
+    far_df: Any,
+    t1: float,
+    t2: float,
+    risk_free_rate: float,
+    target_days: int = 30,
+    dividend_yield: float = 0.0,
+) -> float:
+    """
+    Calculates a VIX-like implied volatility index by interpolating between two
+    expiry MFIVs using the CBOE VIX methodology.
+
+    The CBOE formula weights near- and far-term variances proportionally so the
+    result represents the implied volatility for exactly ``target_days`` days:
+
+        σ² = [T1·σ1²·w1 + T2·σ2²·w2] · (365 / target_days)
+
+    where w1 = (T2 - T_target)/(T2 - T1) and w2 = (T_target - T1)/(T2 - T1).
+
+    Args:
+        near_df (Any): DataFrame for the near-term expiry (output of
+            ``parse_option_chain_to_df``). Must contain a single expiration.
+        far_df (Any): DataFrame for the far-term expiry. Must contain a single
+            expiration distinct from ``near_df``.
+        t1 (float): Time to near-term expiry in years (e.g. 23/365.0).
+        t2 (float): Time to far-term expiry in years (e.g. 37/365.0).
+            Must satisfy t2 > t1 > 0.
+        risk_free_rate (float): Annualised risk-free rate (e.g. 0.05 for 5%).
+        target_days (int): Target interpolation horizon in calendar days.
+            Defaults to 30 (standard VIX convention).
+        dividend_yield (float): Continuous annualised dividend yield. Defaults to 0.0.
+
+    Returns:
+        float: Annualised implied volatility as a decimal (e.g. 0.18 means 18%).
+            Returns ``np.nan`` if either leg produces a NaN MFIV.
+
+    Raises:
+        ValueError: If t1 >= t2, t1 <= 0, or target_days <= 0.
+        ValueError: If the target horizon falls outside [t1, t2].
+    """
+    import numpy as np
+
+    if t1 <= 0 or t2 <= t1:
+        raise ValueError(f"Require 0 < t1 < t2, got t1={t1}, t2={t2}.")
+    if target_days <= 0:
+        raise ValueError(f"target_days must be positive, got {target_days}.")
+
+    t_target = target_days / 365.0
+    if not (t1 <= t_target <= t2):
+        raise ValueError(
+            f"Target horizon {t_target:.4f} yr ({target_days}d) must lie within "
+            f"[t1={t1:.4f}, t2={t2:.4f}]."
+        )
+
+    sigma1 = calculate_mfiv_from_df(near_df, t1, risk_free_rate, dividend_yield)
+    sigma2 = calculate_mfiv_from_df(far_df, t2, risk_free_rate, dividend_yield)
+
+    if np.isnan(sigma1) or np.isnan(sigma2):
+        return np.nan
+
+    var1 = sigma1**2
+    var2 = sigma2**2
+
+    # CBOE interpolation weights
+    w1 = (t2 - t_target) / (t2 - t1)
+    w2 = (t_target - t1) / (t2 - t1)
+
+    # Annualise to target_days horizon
+    interpolated_variance = (t1 * var1 * w1 + t2 * var2 * w2) * (365.0 / target_days)
+    return float(np.sqrt(max(interpolated_variance, 0.0)))
+
+
 def calculate_mfiv_from_df(
     df: Any, time_to_maturity: float, risk_free_rate: float, dividend_yield: float = 0.0
 ) -> float:
     """
-    Helper function to calculate MFIV directly from a DataFrame.
+    Convenience wrapper that computes MFIV directly from a parsed option-chain DataFrame.
+
+    Extracts the required arrays from a DataFrame produced by
+    ``parse_option_chain_to_df`` and delegates to ``calculate_mfiv_single_expiry``.
+    Prefer this over calling ``calculate_mfiv_single_expiry`` directly when working
+    with Schwab API responses.
+
+    Args:
+        df (Any): Pandas DataFrame for a **single** expiry as returned by
+            ``parse_option_chain_to_df``.  Must contain columns:
+            ``stock_price``, ``strike_price``, ``option_price``, ``is_put``.
+        time_to_maturity (float): Time to expiration in years (e.g. ``23/365.0``).
+        risk_free_rate (float): Annualised risk-free rate (e.g. ``0.05`` for 5%).
+        dividend_yield (float): Continuous annualised dividend yield. Defaults to 0.0.
+
+    Returns:
+        float: Annualised MFIV as a decimal (e.g. ``0.18``), or ``numpy.nan`` if
+            ``df`` is empty or the calculation fails.
+
+    Raises:
+        ValueError: If ``df`` contains multiple expiration dates (MFIV requires a
+            single expiry per call) or if required columns are missing.
+
+    Example::
+
+        from schwab_api.utils import parse_option_chain_to_df
+        from schwab_api.math import calculate_mfiv_from_df
+
+        df = parse_option_chain_to_df(client.option_chains("SPY", fromDate="2025-05-16",
+                                                            toDate="2025-05-16").json())
+        iv = calculate_mfiv_from_df(df, time_to_maturity=23/365.0, risk_free_rate=0.05)
+        print(f"SPY 23-day MFIV: {iv:.4f}")
     """
     import numpy as np
 

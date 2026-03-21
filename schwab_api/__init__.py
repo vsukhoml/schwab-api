@@ -8,8 +8,9 @@ from .exceptions import (
     ResourceNotFoundError,
     SchwabAPIError,
     ServerError,
+    retry_on_transient,
 )
-from .math import BlackScholesPricer, calculate_gamma_exposure
+from .math import BlackScholesPricer, calculate_gamma_exposure, calculate_vix_like_index
 from .stream import StreamClient, StreamClientAsync
 from .stream_parsers import (
     StreamResponseHandler,
@@ -31,12 +32,14 @@ __all__ = [
     "StreamClient",
     "StreamClientAsync",
     "StreamResponseHandler",
+    "retry_on_transient",
     "parse_numeric_fields",
     "get_numeric_fields",
     "OptionChainAnalyzer",
     "PositionAnalyzer",
     "BlackScholesPricer",
     "calculate_gamma_exposure",
+    "calculate_vix_like_index",
     "orders",
     "utils",
 ]

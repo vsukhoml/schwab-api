@@ -1,6 +1,8 @@
+import collections
 import datetime
 import logging
 import threading
+import time
 import urllib.parse
 from functools import wraps
 from typing import Any, Dict, List, Optional, Union
@@ -30,6 +32,49 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+# Schwab enforces 120 requests per 60-second rolling window across all endpoints.
+_RATE_LIMIT = 120
+_RATE_PERIOD = 60.0
+
+
+class _RateLimiter:
+    """
+    Sliding-window rate limiter: at most ``_RATE_LIMIT`` calls per ``_RATE_PERIOD`` seconds.
+
+    Thread-safe. Blocks (sleeps) when the budget is exhausted rather than raising,
+    so callers never need to catch :class:`RateLimitError` for self-induced throttling.
+    """
+
+    __slots__ = ("_rate", "_period", "_timestamps", "_lock")
+
+    def __init__(self, rate: int = _RATE_LIMIT, period: float = _RATE_PERIOD) -> None:
+        self._rate = rate
+        self._period = period
+        self._timestamps: collections.deque = collections.deque()
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        """Block until a request slot is available within the rate limit window."""
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                cutoff = now - self._period
+                # Purge timestamps that have fallen outside the sliding window.
+                while self._timestamps and self._timestamps[0] <= cutoff:
+                    self._timestamps.popleft()
+
+                if len(self._timestamps) < self._rate:
+                    self._timestamps.append(now)
+                    return
+
+                # Must wait until the oldest call exits the window.
+                sleep_time = self._period - (now - self._timestamps[0])
+
+            # Sleep outside the lock so other threads can check concurrently.
+            if sleep_time > 0:
+                logger.debug("Rate limit reached: sleeping %.3fs", sleep_time)
+                time.sleep(sleep_time + 0.001)  # +1 ms ensures the oldest slot expires
 
 
 def check_response(func):
@@ -121,6 +166,7 @@ class Client:
             {"Authorization": f"Bearer {self.tokens.access_token}"}
         )
         self._session_lock = threading.RLock()
+        self._rate_limiter = _RateLimiter()
 
     def update_tokens(
         self, force_access_token: bool = False, force_refresh_token: bool = False
@@ -134,6 +180,7 @@ class Client:
         return False
 
     def _request(self, method: str, path: str, **kwargs):
+        self._rate_limiter.acquire()
         self.update_tokens()
         with self._session_lock:
             return self._session.request(
@@ -500,6 +547,9 @@ class Client:
             >>> chain = client.option_chains("AAPL", contractType="CALL", strikeCount=5).json()
             >>> call_expirations = chain.get('callExpDateMap', {})
         """
+        from .utils import to_schwab
+
+        symbol = to_schwab(symbol)
         return self._request(
             "GET",
             "/marketdata/v1/chains",
@@ -571,6 +621,10 @@ class Client:
             >>> history = client.price_history("AAPL", periodType="day", period=5, frequencyType="minute", frequency=15).json()
             >>> candles = history.get('candles', [])
         """
+        from .utils import to_schwab
+
+        symbol = to_schwab(symbol)
+
         return self._request(
             "GET",
             "/marketdata/v1/pricehistory",
@@ -598,6 +652,13 @@ class Client:
         :param projection: Search type (symbol-search, symbol-regex, desc-search, desc-regex,
                            search, fundamental).
         """
+        from .utils import to_schwab
+
+        if isinstance(symbols, list):
+            symbols = [to_schwab(s) for s in symbols]
+        else:
+            symbols = to_schwab(symbols)
+
         return self._request(
             "GET",
             "/marketdata/v1/instruments",
@@ -769,3 +830,153 @@ class Client:
                 result[ticker] = instrument
 
         return result
+
+    def get_implied_volatility(
+        self,
+        symbol: str,
+        target_days: int = 30,
+        strike_count: int = 30,
+        risk_free_rate: float = 0.05,
+    ) -> float:
+        """
+        Compute a VIX-style implied volatility for any optionable symbol.
+
+        Fetches the expiration chain, selects the two expiries that bracket
+        ``target_days``, fetches the full option chains for each, then
+        interpolates using the CBOE VIX methodology via
+        ``calculate_vix_like_index``.
+
+        When no expiry shorter than ``target_days`` exists (e.g. long-dated
+        symbols or very short ``target_days``), falls back to the two nearest
+        available expiries.  When only one expiry is available at all, returns
+        the single-expiry MFIV directly.
+
+        Args:
+            symbol (str): Underlying ticker in any format (Yahoo or Schwab).
+                Auto-converted internally.
+            target_days (int): Target horizon in calendar days. Defaults to 30.
+            strike_count (int): Number of strikes above and below ATM per leg.
+                Larger values improve MFIV accuracy. Defaults to 30.
+            risk_free_rate (float): Annualised risk-free rate (e.g. 0.05 = 5%).
+                Defaults to 0.05.
+
+        Returns:
+            float: Annualised implied volatility as a decimal
+                (e.g. 0.23 means 23%).  Returns ``float('nan')`` when the
+                computation cannot be completed (missing data, empty chain).
+        """
+
+        from .math import calculate_mfiv_from_df, calculate_vix_like_index
+        from .utils import parse_option_chain_to_df
+
+        today = datetime.date.today()
+
+        # --- Fetch and sort available expiry dates ---
+        try:
+            exp_json = self.option_expiration_chain(symbol).json()
+        except Exception as e:
+            logger.warning("Could not fetch expiration chain for %s: %s", symbol, e)
+            return float("nan")
+
+        dated: list[tuple[int, datetime.date]] = []
+        for entry in exp_json.get("expirationList", []):
+            date_str = entry.get("expirationDate")
+            if not date_str:
+                continue
+            try:
+                exp_date = datetime.date.fromisoformat(date_str)
+            except ValueError:
+                continue
+            dte = (exp_date - today).days
+            if dte >= 1:
+                dated.append((dte, exp_date))
+
+        if not dated:
+            logger.warning("No valid future expiry dates for %s", symbol)
+            return float("nan")
+
+        dated.sort()
+
+        # --- Select near and far expiries bracketing target_days ---
+        near_candidates = [(dte, d) for dte, d in dated if dte <= target_days]
+        far_candidates = [(dte, d) for dte, d in dated if dte > target_days]
+
+        def _chain_df(expiry: datetime.date) -> Any:
+            """Fetch and parse the option chain for a single expiry."""
+            return parse_option_chain_to_df(
+                self.option_chains(
+                    symbol,
+                    fromDate=expiry,
+                    toDate=expiry,
+                    strikeCount=strike_count,
+                    includeUnderlyingQuote=True,
+                ).json()
+            )
+
+        if near_candidates and far_candidates:
+            near_dte, near_date = near_candidates[-1]  # largest DTE ≤ target
+            far_dte, far_date = far_candidates[0]  # smallest DTE > target
+        elif far_candidates:
+            # All expiries beyond target — use two shortest
+            logger.warning(
+                "%s: no expiry ≤%d days; using nearest two (%d, %d)",
+                symbol,
+                target_days,
+                far_candidates[0][0],
+                far_candidates[1][0]
+                if len(far_candidates) > 1
+                else far_candidates[0][0],
+            )
+            if len(far_candidates) < 2:
+                near_dte, near_date = far_candidates[0]
+                return float(
+                    calculate_mfiv_from_df(
+                        _chain_df(near_date), near_dte / 365.0, risk_free_rate
+                    )
+                )
+            near_dte, near_date = far_candidates[0]
+            far_dte, far_date = far_candidates[1]
+        else:
+            # All expiries shorter than target — use two longest
+            logger.warning(
+                "%s: no expiry >%d days; using two longest (%d, %d)",
+                symbol,
+                target_days,
+                near_candidates[-2][0]
+                if len(near_candidates) > 1
+                else near_candidates[-1][0],
+                near_candidates[-1][0],
+            )
+            if len(near_candidates) < 2:
+                near_dte, near_date = near_candidates[-1]
+                return float(
+                    calculate_mfiv_from_df(
+                        _chain_df(near_date), near_dte / 365.0, risk_free_rate
+                    )
+                )
+            near_dte, near_date = near_candidates[-2]
+            far_dte, far_date = near_candidates[-1]
+
+        # --- Fetch chains and interpolate ---
+        near_df = _chain_df(near_date)
+        far_df = _chain_df(far_date)
+
+        t1 = near_dte / 365.0
+        t2 = far_dte / 365.0
+
+        try:
+            import warnings
+
+            # Duplicate-strike warnings are expected: Schwab returns puts+calls at each
+            # strike when fromDate==toDate, creating duplicates that the MFIV averager
+            # handles correctly. Suppress to avoid noisy output.
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="Duplicate strike")
+                result = calculate_vix_like_index(
+                    near_df, far_df, t1, t2, risk_free_rate, target_days
+                )
+        except (ValueError, Exception) as e:
+            logger.warning("calculate_vix_like_index failed for %s: %s", symbol, e)
+            return float("nan")
+
+        return float(result)

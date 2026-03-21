@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 curl_cffi = ["curl_cffi"]
 pandas = ["pandas"]
-all = ["curl_cffi", "pandas"]
+all = ["curl_cffi", "pandas", "scipy", "numpy"]
 
 [tool.setuptools.packages.find]
 include = ["schwab_api", "schwab_api.*"]

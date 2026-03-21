@@ -50,6 +50,14 @@ def main():
             f"Loaded {len(account_manager.accounts)} accounts and {len(account_manager.positions)} unique positions."
         )
 
+        for acc_num, acc in account_manager.accounts.items():
+            primary = " [PRIMARY]" if acc.get("primaryAccount") else ""
+            nick = acc.get("nickName") or "(no nickname)"
+            logger.info(
+                f"  Account {acc_num}{primary}: {nick!r} | type={acc.get('type')} | "
+                f"cash=${acc.get('cashBalance', 0):.2f} | liq=${acc.get('liquidationValue', 0):.2f}"
+            )
+
         if not account_manager.positions:
             logger.warning(
                 "No positions found! Stream updates will have nothing to track."

@@ -22,7 +22,8 @@ class AccountManager(StreamResponseHandler):
         client (Client): The active Schwab REST API client.
         stream_client (Optional[StreamClient]): The optional stream client for real-time updates.
         accounts (Dict[int, Dict[str, Any]]): Dictionary of account data keyed by account number.
-            Contains 'hashValue', 'type', 'cashBalance', and 'liquidationValue'.
+            Contains 'hashValue', 'type', 'cashBalance', 'liquidationValue',
+            'nickName' (user-assigned label from preferences), and 'primaryAccount' (bool).
         positions (Dict[str, Dict[int, Dict[str, Any]]]): Dictionary of position data.
             Keyed by symbol, then by account number. Contains quantity, price, and market value details.
         quotes (Dict[str, Dict[str, Any]]): Dictionary of cached quotes used for real-time market value
@@ -52,26 +53,61 @@ class AccountManager(StreamResponseHandler):
         Fetches linked accounts and all positions from the REST API, aggregating them into easy-to-use structures.
 
         This method performs the following:
-        1. Calls the `linked_accounts()` endpoint to map raw account numbers to their respective encrypted hashes.
-        2. Calls the `account_details_all(fields="positions")` endpoint to retrieve current balances and positions.
-        3. Aggregates the balances into the `self.accounts` dictionary.
-        4. Aggregates the positions into the `self.positions` dictionary, grouping them by symbol and then by account.
-        5. If a `stream_client` is attached, it automatically invokes `_subscribe_positions()` to begin
+        1. Calls the `user_preferences()` endpoint to fetch account nicknames and primary-account flags.
+        2. Calls the `linked_accounts()` endpoint to map raw account numbers to their encrypted hashes.
+        3. Calls the `account_details_all(fields="positions")` endpoint to retrieve current balances and positions.
+        4. Aggregates the balances into the `self.accounts` dictionary.
+        5. Aggregates the positions into the `self.positions` dictionary, grouping them by symbol and then by account.
+        6. If a `stream_client` is attached, it automatically invokes `_subscribe_positions()` to begin
            tracking real-time market values for those symbols, and `_subscribe_account_activity()` to track trade fills.
         """
         # Ensure thread safety in case it's called from a background thread
         with self._update_lock:
+            # Fetch account nicknames and primary-account flags from user preferences.
+            # This is a best-effort call; a failure must not abort the rest of update().
+            pref_map: Dict[int, Dict[str, Any]] = {}
+            try:
+                prefs = self.client.user_preferences().json()
+                pref_accounts = (
+                    prefs.get("accounts", []) if isinstance(prefs, dict) else []
+                )
+                pref_map = {
+                    int(a["accountNumber"]): {
+                        "nickName": a.get("nickName", ""),
+                        "primaryAccount": a.get("primaryAccount", False),
+                    }
+                    for a in pref_accounts
+                    if "accountNumber" in a
+                }
+            except Exception as e:
+                logger.warning(
+                    "Could not fetch user preferences (account names unavailable): %s",
+                    e,
+                )
+
             # Fetch linked accounts
             linked = self.client.linked_accounts().json()
             for account in linked:
                 acc_num = int(account["accountNumber"])
+                pref = pref_map.get(acc_num, {})
                 if acc_num not in self.accounts:
                     self.accounts[acc_num] = {
                         "hashValue": account["hashValue"],
                         "type": "UNKNOWN",
                         "cashBalance": 0.0,
                         "liquidationValue": 0.0,
+                        "nickName": pref.get("nickName", ""),
+                        "primaryAccount": pref.get("primaryAccount", False),
                     }
+                else:
+                    # Refresh in case the user renamed the account since the last call.
+                    self.accounts[acc_num]["nickName"] = pref.get(
+                        "nickName", self.accounts[acc_num].get("nickName", "")
+                    )
+                    self.accounts[acc_num]["primaryAccount"] = pref.get(
+                        "primaryAccount",
+                        self.accounts[acc_num].get("primaryAccount", False),
+                    )
 
             # Fetch positions for all linked accounts
             account_details = self.client.account_details_all(fields="positions").json()

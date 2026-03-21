@@ -1,312 +1,343 @@
 import json
 import logging
 from types import MappingProxyType
-from typing import Any, Dict, Final, List, Optional, Union
+from typing import Any, Callable, Dict, Final, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
-# Standard field mappings based on Schwab API documentation.
-# We use string keys because JSON keys arrive as strings.
-EQUITIES_MAP: Final = MappingProxyType(
+# ---------------------------------------------------------------------------
+# Field maps: numeric key → (field_name, cast_fn | None)
+#
+# Each entry encodes both the human-readable name and the type-cast function
+# in a single lookup.  Fields whose values are already the correct Python type
+# (strings, structured objects) use ``None`` as the cast function.
+#
+# NOTE: hard_to_borrow / shortable use _i (not _b) because Schwab encodes
+#       them as -1=NULL / 0=false / 1=true — bool(-1) would silently lose NULL.
+# ---------------------------------------------------------------------------
+
+
+def _to_bool(v: Any) -> bool:
+    """Safe bool cast: handles Python bools and Schwab 'true'/'false' strings."""
+    if isinstance(v, bool):
+        return v
+    return str(v).lower() in ("true", "1")
+
+
+# Compact aliases for type-cast callables used in the map literals below.
+_f: Callable[[Any], float] = float
+_i: Callable[[Any], int] = int
+_b: Callable[[Any], bool] = _to_bool
+
+# Type alias for a single field-map entry.
+_FieldEntry = tuple[str, Optional[Callable[[Any], Any]]]
+
+EQUITIES_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
     {
-        "0": "symbol",
-        "1": "bid_price",
-        "2": "ask_price",
-        "3": "last_price",
-        "4": "bid_size",
-        "5": "ask_size",
-        "6": "ask_id",
-        "7": "bid_id",
-        "8": "total_volume",
-        "9": "last_size",
-        "10": "high_price",
-        "11": "low_price",
-        "12": "close_price",
-        "13": "exchange_id",
-        "14": "marginable",
-        "15": "description",
-        "16": "last_id",
-        "17": "open_price",
-        "18": "net_change",
-        "19": "52_week_high",
-        "20": "52_week_low",
-        "21": "pe_ratio",
-        "22": "annual_dividend_amount",
-        "23": "dividend_yield",
-        "24": "nav",
-        "25": "exchange_name",
-        "26": "dividend_date",
-        "27": "regular_market_quote",
-        "28": "regular_market_trade",
-        "29": "regular_market_last_price",
-        "30": "regular_market_last_size",
-        "31": "regular_market_net_change",
-        "32": "security_status",
-        "33": "mark_price",
-        "34": "quote_time",
-        "35": "trade_time",
-        "36": "regular_market_trade_time",
-        "37": "bid_time",
-        "38": "ask_time",
-        "39": "ask_mic_id",
-        "40": "bid_mic_id",
-        "41": "last_mic_id",
-        "42": "net_percent_change",
-        "43": "regular_market_percent_change",
-        "44": "mark_price_net_change",
-        "45": "mark_price_percent_change",
-        "46": "hard_to_borrow_quantity",
-        "47": "hard_to_borrow_rate",
-        "48": "hard_to_borrow",
-        "49": "shortable",
-        "50": "post_market_net_change",
-        "51": "post_market_percent_change",
+        "0": ("symbol", None),
+        "1": ("bid_price", _f),
+        "2": ("ask_price", _f),
+        "3": ("last_price", _f),
+        "4": ("bid_size", _i),
+        "5": ("ask_size", _i),
+        "6": ("ask_id", None),
+        "7": ("bid_id", None),
+        "8": ("total_volume", _i),
+        "9": ("last_size", _i),
+        "10": ("high_price", _f),
+        "11": ("low_price", _f),
+        "12": ("close_price", _f),
+        "13": ("exchange_id", None),
+        "14": ("marginable", _b),
+        "15": ("description", None),
+        "16": ("last_id", None),
+        "17": ("open_price", _f),
+        "18": ("net_change", _f),
+        "19": ("52_week_high", _f),
+        "20": ("52_week_low", _f),
+        "21": ("pe_ratio", _f),
+        "22": ("annual_dividend_amount", _f),
+        "23": ("dividend_yield", _f),
+        "24": ("nav", _f),
+        "25": ("exchange_name", None),
+        "26": ("dividend_date", None),
+        "27": ("regular_market_quote", _b),
+        "28": ("regular_market_trade", _b),
+        "29": ("regular_market_last_price", _f),
+        "30": ("regular_market_last_size", _i),
+        "31": ("regular_market_net_change", _f),
+        "32": ("security_status", None),
+        "33": ("mark_price", _f),
+        "34": ("quote_time", _i),
+        "35": ("trade_time", _i),
+        "36": ("regular_market_trade_time", _i),
+        "37": ("bid_time", _i),
+        "38": ("ask_time", _i),
+        "39": ("ask_mic_id", None),
+        "40": ("bid_mic_id", None),
+        "41": ("last_mic_id", None),
+        "42": ("net_percent_change", _f),
+        "43": ("regular_market_percent_change", _f),
+        "44": ("mark_price_net_change", _f),
+        "45": ("mark_price_percent_change", _f),
+        "46": ("hard_to_borrow_quantity", _i),
+        "47": ("hard_to_borrow_rate", _f),
+        "48": ("hard_to_borrow", _i),  # -1=NULL sentinel: use int, not bool
+        "49": ("shortable", _i),  # -1=NULL sentinel: use int, not bool
+        "50": ("post_market_net_change", _f),
+        "51": ("post_market_percent_change", _f),
     }
 )
 
-OPTIONS_MAP: Final = MappingProxyType(
+OPTIONS_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
     {
-        "0": "symbol",
-        "1": "description",
-        "2": "bid_price",
-        "3": "ask_price",
-        "4": "last_price",
-        "5": "high_price",
-        "6": "low_price",
-        "7": "close_price",
-        "8": "total_volume",
-        "9": "open_interest",
-        "10": "volatility",
-        "11": "intrinsic_value",
-        "12": "expiration_year",
-        "13": "multiplier",
-        "14": "digits",
-        "15": "open_price",
-        "16": "bid_size",
-        "17": "ask_size",
-        "18": "last_size",
-        "19": "net_change",
-        "20": "strike_price",
-        "21": "contract_type",
-        "22": "underlying",
-        "23": "expiration_month",
-        "24": "deliverables",
-        "25": "time_value",
-        "26": "expiration_day",
-        "27": "days_to_expiration",
-        "28": "delta",
-        "29": "gamma",
-        "30": "theta",
-        "31": "vega",
-        "32": "rho",
-        "33": "security_status",
-        "34": "theoretical_option_value",
-        "35": "underlying_price",
-        "36": "uv_expiration_type",
-        "37": "mark_price",
-        "38": "quote_time",
-        "39": "trade_time",
-        "40": "exchange",
-        "41": "exchange_name",
-        "42": "last_trading_day",
-        "43": "settlement_type",
-        "44": "net_percent_change",
-        "45": "mark_price_net_change",
-        "46": "mark_price_percent_change",
-        "47": "implied_yield",
-        "48": "is_penny_pilot",
-        "49": "option_root",
-        "50": "52_week_high",
-        "51": "52_week_low",
-        "52": "indicative_ask_price",
-        "53": "indicative_bid_price",
-        "54": "indicative_quote_time",
-        "55": "exercise_type",
+        "0": ("symbol", None),
+        "1": ("description", None),
+        "2": ("bid_price", _f),
+        "3": ("ask_price", _f),
+        "4": ("last_price", _f),
+        "5": ("high_price", _f),
+        "6": ("low_price", _f),
+        "7": ("close_price", _f),
+        "8": ("total_volume", _i),
+        "9": ("open_interest", _i),
+        "10": ("volatility", _f),
+        "11": ("intrinsic_value", _f),
+        "12": ("expiration_year", _i),
+        "13": ("multiplier", _f),
+        "14": ("digits", _i),
+        "15": ("open_price", _f),
+        "16": ("bid_size", _i),
+        "17": ("ask_size", _i),
+        "18": ("last_size", _i),
+        "19": ("net_change", _f),
+        "20": ("strike_price", _f),
+        "21": ("contract_type", None),
+        "22": ("underlying", None),
+        "23": ("expiration_month", _i),
+        "24": ("deliverables", None),
+        "25": ("time_value", _f),
+        "26": ("expiration_day", _i),
+        "27": ("days_to_expiration", _i),
+        "28": ("delta", _f),
+        "29": ("gamma", _f),
+        "30": ("theta", _f),
+        "31": ("vega", _f),
+        "32": ("rho", _f),
+        "33": ("security_status", None),
+        "34": ("theoretical_option_value", _f),
+        "35": ("underlying_price", _f),
+        "36": ("uv_expiration_type", None),
+        "37": ("mark_price", _f),
+        "38": ("quote_time", _i),
+        "39": ("trade_time", _i),
+        "40": ("exchange", None),
+        "41": ("exchange_name", None),
+        "42": ("last_trading_day", _i),
+        "43": ("settlement_type", None),
+        "44": ("net_percent_change", _f),
+        "45": ("mark_price_net_change", _f),
+        "46": ("mark_price_percent_change", _f),
+        "47": ("implied_yield", _f),
+        "48": ("is_penny_pilot", _b),
+        "49": ("option_root", None),
+        "50": ("52_week_high", _f),
+        "51": ("52_week_low", _f),
+        "52": ("indicative_ask_price", _f),
+        "53": ("indicative_bid_price", _f),
+        "54": ("indicative_quote_time", _i),
+        "55": ("exercise_type", None),
     }
 )
 
-FUTURES_MAP: Final = MappingProxyType(
+FUTURES_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
     {
-        "0": "symbol",
-        "1": "bid_price",
-        "2": "ask_price",
-        "3": "last_price",
-        "4": "bid_size",
-        "5": "ask_size",
-        "6": "bid_id",
-        "7": "ask_id",
-        "8": "total_volume",
-        "9": "last_size",
-        "10": "quote_time",
-        "11": "trade_time",
-        "12": "high_price",
-        "13": "low_price",
-        "14": "close_price",
-        "15": "exchange_id",
-        "16": "description",
-        "17": "last_id",
-        "18": "open_price",
-        "19": "net_change",
-        "20": "future_percent_change",
-        "21": "exchange_name",
-        "22": "security_status",
-        "23": "open_interest",
-        "24": "mark",
-        "25": "tick",
-        "26": "tick_amount",
-        "27": "product",
-        "28": "future_price_format",
-        "29": "future_trading_hours",
-        "30": "future_is_tradable",
-        "31": "future_multiplier",
-        "32": "future_is_active",
-        "33": "future_settlement_price",
-        "34": "future_active_symbol",
-        "35": "future_expiration_date",
-        "36": "expiration_style",
-        "37": "ask_time",
-        "38": "bid_time",
-        "39": "quoted_in_session",
-        "40": "settlement_date",
+        "0": ("symbol", None),
+        "1": ("bid_price", _f),
+        "2": ("ask_price", _f),
+        "3": ("last_price", _f),
+        "4": ("bid_size", _i),
+        "5": ("ask_size", _i),
+        "6": ("bid_id", None),
+        "7": ("ask_id", None),
+        "8": ("total_volume", _i),
+        "9": ("last_size", _i),
+        "10": ("quote_time", _i),
+        "11": ("trade_time", _i),
+        "12": ("high_price", _f),
+        "13": ("low_price", _f),
+        "14": ("close_price", _f),
+        "15": ("exchange_id", None),
+        "16": ("description", None),
+        "17": ("last_id", None),
+        "18": ("open_price", _f),
+        "19": ("net_change", _f),
+        "20": ("future_percent_change", _f),
+        "21": ("exchange_name", None),
+        "22": ("security_status", None),
+        "23": ("open_interest", _i),
+        "24": ("mark", _f),
+        "25": ("tick", _f),
+        "26": ("tick_amount", _f),
+        "27": ("product", None),
+        "28": ("future_price_format", None),
+        "29": ("future_trading_hours", None),
+        "30": ("future_is_tradable", _b),
+        "31": ("future_multiplier", _f),
+        "32": ("future_is_active", _b),
+        "33": ("future_settlement_price", _f),
+        "34": ("future_active_symbol", None),
+        "35": ("future_expiration_date", _i),
+        "36": ("expiration_style", None),
+        "37": ("ask_time", _i),
+        "38": ("bid_time", _i),
+        "39": ("quoted_in_session", _b),
+        "40": ("settlement_date", _i),
     }
 )
 
-FUTURES_OPTIONS_MAP: Final = MappingProxyType(
+FUTURES_OPTIONS_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
     {
-        "0": "symbol",
-        "1": "bid_price",
-        "2": "ask_price",
-        "3": "last_price",
-        "4": "bid_size",
-        "5": "ask_size",
-        "6": "bid_id",
-        "7": "ask_id",
-        "8": "total_volume",
-        "9": "last_size",
-        "10": "quote_time",
-        "11": "trade_time",
-        "12": "high_price",
-        "13": "low_price",
-        "14": "close_price",
-        "15": "last_id",
-        "16": "description",
-        "17": "open_price",
-        "18": "open_interest",
-        "19": "mark",
-        "20": "tick",
-        "21": "tick_amount",
-        "22": "future_multiplier",
-        "23": "future_settlement_price",
-        "24": "underlying_symbol",
-        "25": "strike_price",
-        "26": "future_expiration_date",
-        "27": "expiration_style",
-        "28": "contract_type",
-        "29": "security_status",
-        "30": "exchange",
-        "31": "exchange_name",
+        "0": ("symbol", None),
+        "1": ("bid_price", _f),
+        "2": ("ask_price", _f),
+        "3": ("last_price", _f),
+        "4": ("bid_size", _i),
+        "5": ("ask_size", _i),
+        "6": ("bid_id", None),
+        "7": ("ask_id", None),
+        "8": ("total_volume", _i),
+        "9": ("last_size", _i),
+        "10": ("quote_time", _i),
+        "11": ("trade_time", _i),
+        "12": ("high_price", _f),
+        "13": ("low_price", _f),
+        "14": ("close_price", _f),
+        "15": ("last_id", None),
+        "16": ("description", None),
+        "17": ("open_price", _f),
+        "18": ("open_interest", _f),  # documented as "double" in Schwab spec
+        "19": ("mark", _f),
+        "20": ("tick", _f),
+        "21": ("tick_amount", _f),
+        "22": ("future_multiplier", _f),
+        "23": ("future_settlement_price", _f),
+        "24": ("underlying_symbol", None),
+        "25": ("strike_price", _f),
+        "26": ("future_expiration_date", _i),
+        "27": ("expiration_style", None),
+        "28": ("contract_type", None),
+        "29": ("security_status", None),
+        "30": ("exchange", None),
+        "31": ("exchange_name", None),
     }
 )
 
-FOREX_MAP: Final = MappingProxyType(
+FOREX_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
     {
-        "0": "symbol",
-        "1": "bid_price",
-        "2": "ask_price",
-        "3": "last_price",
-        "4": "bid_size",
-        "5": "ask_size",
-        "6": "total_volume",
-        "7": "last_size",
-        "8": "quote_time",
-        "9": "trade_time",
-        "10": "high_price",
-        "11": "low_price",
-        "12": "close_price",
-        "13": "exchange",
-        "14": "description",
-        "15": "open_price",
-        "16": "net_change",
-        "17": "percent_change",
-        "18": "exchange_name",
-        "19": "digits",
-        "20": "security_status",
-        "21": "tick",
-        "22": "tick_amount",
-        "23": "product",
-        "24": "trading_hours",
-        "25": "is_tradable",
-        "26": "market_maker",
-        "27": "52_week_high",
-        "28": "52_week_low",
-        "29": "mark",
+        "0": ("symbol", None),
+        "1": ("bid_price", _f),
+        "2": ("ask_price", _f),
+        "3": ("last_price", _f),
+        "4": ("bid_size", _i),
+        "5": ("ask_size", _i),
+        "6": ("total_volume", _i),
+        "7": ("last_size", _i),
+        "8": ("quote_time", _i),
+        "9": ("trade_time", _i),
+        "10": ("high_price", _f),
+        "11": ("low_price", _f),
+        "12": ("close_price", _f),
+        "13": ("exchange", None),
+        "14": ("description", None),
+        "15": ("open_price", _f),
+        "16": ("net_change", _f),
+        "17": ("percent_change", _f),
+        "18": ("exchange_name", None),
+        "19": ("digits", _i),
+        "20": ("security_status", None),
+        "21": ("tick", _f),
+        "22": ("tick_amount", _f),
+        "23": ("product", None),
+        "24": ("trading_hours", None),
+        "25": ("is_tradable", _b),
+        "26": ("market_maker", None),
+        "27": ("52_week_high", _f),
+        "28": ("52_week_low", _f),
+        "29": ("mark", _f),
     }
 )
 
-CHART_EQUITY_MAP: Final = MappingProxyType(
+CHART_EQUITY_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
     {
-        "0": "key",
-        "1": "open_price",
-        "2": "high_price",
-        "3": "low_price",
-        "4": "close_price",
-        "5": "volume",
-        "6": "sequence",
-        "7": "chart_time",
-        "8": "chart_day",
+        "0": ("key", None),
+        "1": ("open_price", _f),
+        "2": ("high_price", _f),
+        "3": ("low_price", _f),
+        "4": ("close_price", _f),
+        "5": ("volume", _f),  # documented as "double"
+        "6": ("sequence", _i),
+        "7": ("chart_time", _i),
+        "8": ("chart_day", _i),
     }
 )
 
-CHART_FUTURES_MAP: Final = MappingProxyType(
+CHART_FUTURES_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
     {
-        "0": "key",
-        "1": "chart_time",
-        "2": "open_price",
-        "3": "high_price",
-        "4": "low_price",
-        "5": "close_price",
-        "6": "volume",
+        "0": ("key", None),
+        "1": ("chart_time", _i),
+        "2": ("open_price", _f),
+        "3": ("high_price", _f),
+        "4": ("low_price", _f),
+        "5": ("close_price", _f),
+        "6": ("volume", _f),  # documented as "double"
     }
 )
 
-BOOK_MAP: Final = MappingProxyType(
+BOOK_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
     {
-        "0": "symbol",
-        "1": "market_snapshot_time",
-        "2": "bid_side_levels",
-        "3": "ask_side_levels",
+        "0": ("symbol", None),
+        "1": ("market_snapshot_time", None),
+        "2": ("bid_side_levels", None),
+        "3": ("ask_side_levels", None),
     }
 )
 
-SCREENER_MAP: Final = MappingProxyType(
-    {"0": "symbol", "1": "timestamp", "2": "sort_field", "3": "frequency", "4": "items"}
-)
-
-ACCT_ACTIVITY_MAP: Final = MappingProxyType(
+SCREENER_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
     {
-        "0": "subscription_key",
-        "seq": "sequence",
-        "key": "key",
-        "1": "account",
-        "2": "message_type",
-        "3": "message_data",
+        "0": ("symbol", None),
+        "1": ("timestamp", None),
+        "2": ("sort_field", None),
+        "3": ("frequency", None),
+        "4": ("items", None),
     }
 )
 
-BOOK_LEVEL_MAP: Final = MappingProxyType(
+ACCT_ACTIVITY_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
     {
-        "0": "price",
-        "1": "aggregate_size",
-        "2": "market_maker_count",
-        "3": "market_makers",
+        "0": ("subscription_key", None),
+        "seq": ("sequence", None),
+        "key": ("key", None),
+        "1": ("account", None),
+        "2": ("message_type", None),
+        "3": ("message_data", None),
     }
 )
 
-MARKET_MAKER_MAP: Final = MappingProxyType(
-    {"0": "market_maker_id", "1": "size", "2": "quote_time"}
+BOOK_LEVEL_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
+    {
+        "0": ("price", None),
+        "1": ("aggregate_size", None),
+        "2": ("market_maker_count", None),
+        "3": ("market_makers", None),
+    }
 )
 
-SERVICE_MAPPINGS: Final[MappingProxyType[str, MappingProxyType[str, str]]] = (
+MARKET_MAKER_MAP: Final[MappingProxyType[str, _FieldEntry]] = MappingProxyType(
+    {"0": ("market_maker_id", None), "1": ("size", None), "2": ("quote_time", None)}
+)
+
+SERVICE_MAPPINGS: Final[MappingProxyType[str, MappingProxyType[str, _FieldEntry]]] = (
     MappingProxyType(
         {
             "LEVELONE_EQUITIES": EQUITIES_MAP,
@@ -326,9 +357,9 @@ SERVICE_MAPPINGS: Final[MappingProxyType[str, MappingProxyType[str, str]]] = (
     )
 )
 
-# Reverse mappings for converting symbolic names back to numeric IDs
+# Reverse mappings for converting symbolic names back to numeric IDs.
 REVERSE_SERVICE_MAPPINGS: Final[Dict[str, Dict[str, str]]] = {
-    service: {v: k for k, v in mapping.items()}
+    service: {entry[0]: k for k, entry in mapping.items()}
     for service, mapping in SERVICE_MAPPINGS.items()
 }
 
@@ -367,16 +398,26 @@ def parse_numeric_fields(
     update_data: Dict[str, Any], service_type: str
 ) -> Dict[str, Any]:
     """
-    Converts raw numeric keys (e.g. '1', '2') from the stream into human-readable dictionary keys.
+    Converts raw numeric keys (e.g. ``'1'``, ``'2'``) from the stream into
+    human-readable dictionary keys and casts values to their correct Python types
+    (``float``, ``int``, ``bool``).
+
+    Each entry in a service map is a ``(field_name, cast_fn | None)`` tuple.
+    The name translation and type cast are resolved in a single dict lookup,
+    eliminating the secondary type-map look-up used in earlier implementations.
+
+    Fields without a cast function and ``None`` values are passed through unchanged.
+    Cast failures (e.g. malformed values from Schwab) silently preserve the raw value.
     """
     mapping = SERVICE_MAPPINGS.get(service_type, MappingProxyType({}))
-    parsed = {"key": update_data.get("key")}
+    parsed: Dict[str, Any] = {"key": update_data.get("key")}
 
     for key, value in update_data.items():
         if key == "key":
             continue
 
-        mapped_key = mapping.get(key, key)
+        entry = mapping.get(key)
+        mapped_key, cast_fn = entry if entry is not None else (key, None)
 
         # Handle nested levels for Book services
         if service_type in ("NYSE_BOOK", "NASDAQ_BOOK", "OPTIONS_BOOK") and key in (
@@ -388,21 +429,30 @@ def parse_numeric_fields(
             for level in value:
                 parsed_level: Dict[str, Any] = {}
                 for lk, lv in level.items():
-                    mlk = BOOK_LEVEL_MAP.get(str(lk), lk)
+                    level_entry = BOOK_LEVEL_MAP.get(str(lk))
+                    mlk = level_entry[0] if level_entry is not None else lk
                     if mlk == "market_makers":
                         # Nested array of market makers
                         mms = []
                         for mm in lv:
-                            parsed_mm: Dict[str, Any] = {}
-                            for mk, mv in mm.items():
-                                parsed_mm[MARKET_MAKER_MAP.get(str(mk), mk)] = mv
-                            mms.append(parsed_mm)
+                            mm_entry_get = MARKET_MAKER_MAP.get
+                            mms.append(
+                                {
+                                    (mm_entry_get(str(mk)) or (mk, None))[0]: mv
+                                    for mk, mv in mm.items()
+                                }
+                            )
                         parsed_level[mlk] = mms
                     else:
                         parsed_level[mlk] = lv
                 levels.append(parsed_level)
             parsed[mapped_key] = levels
         else:
+            if cast_fn is not None and value is not None:
+                try:
+                    value = cast_fn(value)
+                except (ValueError, TypeError):
+                    pass  # preserve raw value on unexpected encoding
             parsed[mapped_key] = value
 
     return parsed
