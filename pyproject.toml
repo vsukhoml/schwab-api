@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "schwab-api"
-version = "0.1.0"
+version = "0.1.1"
 description = "A lightweight and reliable Python client for the Charles Schwab Trading API"
 readme = "README.md"
 authors = [

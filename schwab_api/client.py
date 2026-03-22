@@ -1,4 +1,3 @@
-import collections
 import datetime
 import logging
 import threading
@@ -33,48 +32,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Schwab enforces 120 requests per 60-second rolling window across all endpoints.
-_RATE_LIMIT = 120
-_RATE_PERIOD = 60.0
-
-
-class _RateLimiter:
-    """
-    Sliding-window rate limiter: at most ``_RATE_LIMIT`` calls per ``_RATE_PERIOD`` seconds.
-
-    Thread-safe. Blocks (sleeps) when the budget is exhausted rather than raising,
-    so callers never need to catch :class:`RateLimitError` for self-induced throttling.
-    """
-
-    __slots__ = ("_rate", "_period", "_timestamps", "_lock")
-
-    def __init__(self, rate: int = _RATE_LIMIT, period: float = _RATE_PERIOD) -> None:
-        self._rate = rate
-        self._period = period
-        self._timestamps: collections.deque = collections.deque()
-        self._lock = threading.Lock()
-
-    def acquire(self) -> None:
-        """Block until a request slot is available within the rate limit window."""
-        while True:
-            with self._lock:
-                now = time.monotonic()
-                cutoff = now - self._period
-                # Purge timestamps that have fallen outside the sliding window.
-                while self._timestamps and self._timestamps[0] <= cutoff:
-                    self._timestamps.popleft()
-
-                if len(self._timestamps) < self._rate:
-                    self._timestamps.append(now)
-                    return
-
-                # Must wait until the oldest call exits the window.
-                sleep_time = self._period - (now - self._timestamps[0])
-
-            # Sleep outside the lock so other threads can check concurrently.
-            if sleep_time > 0:
-                logger.debug("Rate limit reached: sleeping %.3fs", sleep_time)
-                time.sleep(sleep_time + 0.001)  # +1 ms ensures the oldest slot expires
+# Reactive rate-limit backoff: wait this many seconds on the first 429/529,
+# doubling on each subsequent retry within the same request.
+_RATE_LIMIT_BACKOFF = 60.0
+_RATE_LIMIT_RETRIES = 3
 
 
 def check_response(func):
@@ -166,7 +127,6 @@ class Client:
             {"Authorization": f"Bearer {self.tokens.access_token}"}
         )
         self._session_lock = threading.RLock()
-        self._rate_limiter = _RateLimiter()
 
     def update_tokens(
         self, force_access_token: bool = False, force_refresh_token: bool = False
@@ -180,12 +140,33 @@ class Client:
         return False
 
     def _request(self, method: str, path: str, **kwargs):
-        self._rate_limiter.acquire()
         self.update_tokens()
-        with self._session_lock:
-            return self._session.request(
-                method, f"{self._base_api_url}{path}", timeout=self.timeout, **kwargs
-            )  # type: ignore[arg-type]
+        for attempt in range(_RATE_LIMIT_RETRIES + 1):
+            with self._session_lock:
+                resp = self._session.request(
+                    method,
+                    f"{self._base_api_url}{path}",
+                    timeout=self.timeout,
+                    **kwargs,
+                )  # type: ignore[arg-type]
+            if resp.status_code not in (429, 529) or attempt == _RATE_LIMIT_RETRIES:
+                return resp
+            retry_after = resp.headers.get("Retry-After")
+            wait = (
+                float(retry_after)
+                if retry_after
+                else _RATE_LIMIT_BACKOFF * (2**attempt)
+            )
+            logger.warning(
+                "HTTP %d rate limited; waiting %.0fs (attempt %d/%d)",
+                resp.status_code,
+                wait,
+                attempt + 1,
+                _RATE_LIMIT_RETRIES,
+            )
+            time.sleep(wait)
+            self.update_tokens()  # tokens may expire during a long backoff
+        return resp  # unreachable; satisfies type checker
 
     def close(self):
         try:
